@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package stateflow.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// The wire contract is intentionally metadata-first. Prompt bodies, tool
+// results, and KV tensors stay in the data plane or are referenced by ID.
+message AgentStateEvent {
+  string event_type = 1;
+  string session_id = 2;
+  string task_id = 3;
+  int64 turn_id = 4;
+  string step_id = 5;
+  string request_id = 6;
+  string attempt_id = 7;
+  string trace_id = 8;
+  string source = 9;
+  google.protobuf.Timestamp observed_at = 10;
+  int64 epoch = 11;
+  int64 sequence = 12;
+  map<string, string> payload_json = 13;
+  double confidence = 14;
+  double ttl_seconds = 15;
+  bool authoritative = 16;
+}
+
+message RoutingDecision {
+  string decision_id = 1;
+  string selected_model = 2;
+  string selected_endpoint = 3;
+  string selected_replica = 4;
+  double predicted_success = 5;
+  double predicted_cost = 6;
+  double predicted_latency_seconds = 7;
+  string decision_reason = 8;
+  string scheduler_version = 9;
+  string state_id = 10;
+  int64 state_version = 11;
+  repeated string override_reasons = 12;
+  bool fallback = 13;
+  google.protobuf.Timestamp timestamp = 14;
+}

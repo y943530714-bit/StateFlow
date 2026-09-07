@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stateflow"
+version = "0.1.0"
+description = "Success-first request scheduler and state plane for stateful agents"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.setuptools.packages.find]
+include = ["stateflow*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
