@@ -24,6 +24,9 @@ authority、timestamp、TTL、confidence 和 `source_ref`。
 | `stateflow/adapters/kubernetes.py` | Cluster/Node/Instance、binding、allocatable、readiness |
 | `stateflow/adapters/dcgm.py` | HBM、GPU utilization、node health、effective bandwidth 窗口 |
 | `stateflow/adapters/bridge.py` | 共享 resolver，生成请求级图和 immutable snapshot |
+| `stateflow/adapters/source.py` | 标准库 HTTP、Prometheus exposition 与 histogram quantile |
+| `stateflow/adapters/clients.py` | vLLM、DCGM、Kubernetes、KV metadata source client |
+| `stateflow/adapters/runner.py` | 请求热路径之外的失败隔离 polling 与退避 |
 
 ## Architecture
 
@@ -68,6 +71,27 @@ view = bridge.materialize_request("request-a")
 幂等拒绝，不会重复修改状态。每次接收 observation 后都会更新 Adapter heartbeat
 和 source watermark。
 
+### Source clients
+
+- `VLLMSourceClient` 读取 `/metrics`，映射 waiting/running、KV usage、TTFT p95
+  和 TPOT p95。Metric 名称依据 vLLM 官方 production metrics 文档。
+- `DCGMSourceClient` 读取 dcgm-exporter exposition，按 GPU 聚合 FB used、GPU
+  utilization 和 XID health；FB used 从 MiB 规范化为 byte，utilization 从百分比
+  规范化为 ratio。
+- `KubernetesSourceClient` 读取 Node/Pod list API，将 `resourceVersion` 保留为
+  watermark；Pod label `stateflow.io/runtime-id` 和 `stateflow.io/instance-id` 可覆盖
+  默认 identity。
+- `KVMetadataSourceClient` 读取 metadata-only sidecar JSON；KV tensor 和 prompt
+  内容不会进入 StateFlow。
+- `PollingAdapterRunner` 捕获 source 异常并执行有上限的指数退避；异常不进入
+  Gateway 请求路径。
+
+参考来源：
+
+- https://docs.vllm.ai/en/latest/design/metrics/
+- https://docs.nvidia.com/datacenter/dcgm/latest/gpu-telemetry/dcgm-exporter.html
+- https://kubernetes.io/docs/reference/using-api/api-concepts/#efficient-detection-of-changes
+
 ## Algorithm
 
 ```text
@@ -97,6 +121,8 @@ materialize(request_id)
 - 动态状态 TTL 到期后进入 `snapshot.stale`，不补默认值。
 - Adapter heartbeat 单独按自身 TTL 标记 stale。
 - 相同 observation ID 幂等，trace 可关联多个 request，唯一 request ID 冲突被拒绝。
+- vLLM histogram/gauge、DCGM 多 GPU 与单位转换、Kubernetes Node/Pod
+  resourceVersion、KV sidecar JSON 和 polling failure recovery。
 
 ## Acceptance
 
@@ -105,5 +131,6 @@ materialize(request_id)
 - [x] stale/missing 显式传播，低 authority 不覆盖新鲜高 authority 状态。
 - [x] Adapter 与现有 serving 热路径隔离，无新增第三方运行时依赖。
 - [x] 全量单元测试通过。
-- [ ] 真实 vLLM/SGLang、Mooncake/LMCache、K8s/Ray、DCGM/NVML/NIC 联调。
+- [x] vLLM/DCGM Prometheus、Kubernetes list、KV metadata HTTP client 与 fixture 测试。
+- [ ] SGLang/Ray、原生 Mooncake/LMCache profile 与目标环境联调。
 - [ ] 独立 Adapter 进程、gRPC transport、持久 watermark 与 backpressure。

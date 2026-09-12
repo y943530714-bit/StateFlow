@@ -30,6 +30,8 @@ The implementation includes:
 - a generic proxy harness adapter plus an asynchronous best-effort reporter;
 - protocol-neutral Runtime, KV, Kubernetes, and DCGM semantic adapters with a
   shared correlation resolver and request-scoped graph materialization;
+- dependency-free vLLM/DCGM Prometheus, Kubernetes API, and KV metadata HTTP
+  source clients with failure-isolated polling runners;
 - an in-memory backend and a small `urllib` OpenAI-compatible backend;
 - a standard-library HTTP server for local integration tests.
 

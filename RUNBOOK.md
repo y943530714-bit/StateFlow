@@ -15,7 +15,8 @@ cursors, Candidate-Action control records, hard filters, success-first
 ordering, KV-aware cost, latency/placement, critical override, hysteresis,
 state event application, reporter isolation, protocol normalization, gateway
 routing, Runtime/KV/Kubernetes/DCGM semantic projection, cross-source identity
-resolution, request-scoped graph materialization, and HTTP smoke behavior.
+resolution, source-client parsing, polling failure isolation, request-scoped
+graph materialization, and HTTP smoke behavior.
 
 ## Start the demo
 
@@ -46,9 +47,10 @@ measurement.
 
 - Replace `InMemoryStateStore` and `InMemoryStatePlane` with a durable event
   journal, hot state/relation indexes, and distributed snapshot materializer.
-- Connect the Runtime/KV/K8s/DCGM semantic adapters to source-specific clients,
-  run them as independent processes, and add gRPC bindings for the contracts
-  defined in `proto/stateflow.proto`.
+- Add SGLang/Ray and native Mooncake/LMCache profiles, Kubernetes list-watch
+  recovery, process packaging, and gRPC bindings for the contracts defined in
+  `proto/stateflow.proto`. The current clients cover vLLM/DCGM Prometheus,
+  Kubernetes list polling, and a metadata-only KV sidecar JSON contract.
 - Replace `HeuristicSuccessPredictor` with a calibrated predictor and keep
   uncertainty conservative; unknown state must remain safe.
 - Register tokenizer/context accounting before enabling hard context-window
