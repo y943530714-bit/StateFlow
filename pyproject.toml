@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stateflow"
-version = "0.1.0"
-description = "Success-first request scheduler and state plane for stateful agents"
+version = "0.2.0"
+description = "State and prediction driven control plane for stateful agent infrastructure"
 requires-python = ">=3.10"
 dependencies = []
 

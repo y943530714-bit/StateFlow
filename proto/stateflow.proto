@@ -41,3 +41,216 @@ message RoutingDecision {
   bool fallback = 13;
   google.protobuf.Timestamp timestamp = 14;
 }
+
+enum SourceAuthority {
+  SOURCE_AUTHORITY_LOG_HINT = 0;
+  SOURCE_AUTHORITY_DERIVED = 1;
+  SOURCE_AUTHORITY_DIRECT_TELEMETRY = 2;
+  SOURCE_AUTHORITY_STRUCTURED_LIFECYCLE = 3;
+  SOURCE_AUTHORITY_AUTHORITATIVE_DOMAIN = 4;
+}
+
+message ComponentDescriptor {
+  string component_id = 1;
+  string kind = 2;
+  string implementation = 3;
+  string version = 4;
+  repeated string schema_versions = 5;
+  repeated string produces_state = 6;
+  repeated string consumes_state = 7;
+  repeated string produces_metrics = 8;
+  repeated string consumes_metrics = 9;
+  repeated string manages_types = 10;
+  repeated string relation_capabilities = 11;
+  string update_mode = 12;
+  string endpoint = 13;
+}
+
+message CorrelationIdentity {
+  string trace_id = 1;
+  string span_id = 2;
+  string agent_id = 3;
+  string session_id = 4;
+  string request_id = 5;
+  string action_id = 6;
+  string component_id = 7;
+  string instance_id = 8;
+}
+
+message CanonicalStateUpdate {
+  string entity_ref = 1;
+  string key = 2;
+  string typed_value_json = 3;
+  string producer = 4;
+  google.protobuf.Timestamp timestamp = 5;
+  int64 ttl_ms = 6;
+  SourceAuthority authority = 7;
+  int64 version = 8;
+  string semantic = 9;
+  double confidence = 10;
+  string source_ref = 11;
+  CorrelationIdentity correlation = 12;
+  int64 expected_version = 13;
+  string idempotency_key = 14;
+}
+
+message MetricSample {
+  string entity_ref = 1;
+  string metric_key = 2;
+  double value = 3;
+  string unit = 4;
+  string producer = 5;
+  google.protobuf.Timestamp timestamp = 6;
+  map<string, string> labels = 7;
+  CorrelationIdentity correlation = 8;
+}
+
+message CanonicalEvent {
+  string event_id = 1;
+  string event_type = 2;
+  string subject_ref = 3;
+  string producer = 4;
+  google.protobuf.Timestamp timestamp = 5;
+  CorrelationIdentity correlation = 6;
+  string payload_json = 7;
+  string source_ref = 8;
+}
+
+message Heartbeat {
+  string subject_ref = 1;
+  string producer = 2;
+  string source_watermark = 3;
+  string schema_version = 4;
+  google.protobuf.Timestamp timestamp = 5;
+  int64 ttl_ms = 6;
+}
+
+message GraphEntity {
+  string ref = 1;
+  string graph = 2;
+  string entity_type = 3;
+  string lifecycle = 4;
+  string owner_component_ref = 5;
+  string parent_ref = 6;
+  map<string, string> labels = 7;
+  string schema_version = 8;
+}
+
+message RelationUpdate {
+  string source_ref = 1;
+  string relation_type = 2;
+  string target_ref = 3;
+  string producer = 4;
+  google.protobuf.Timestamp timestamp = 5;
+  SourceAuthority authority = 6;
+  string attributes_json = 7;
+  int64 ttl_ms = 8;
+  int64 version = 9;
+  int64 expected_version = 10;
+  string idempotency_key = 11;
+}
+
+message SnapshotRequest {
+  repeated string entities = 1;
+  repeated string keys = 2;
+  map<string, int64> max_age_ms = 3;
+  SourceAuthority min_authority = 4;
+  bool include_relations = 5;
+}
+
+message CanonicalStateValue {
+  string entity_ref = 1;
+  string key = 2;
+  string typed_value_json = 3;
+  string producer = 4;
+  google.protobuf.Timestamp timestamp = 5;
+  int64 ttl_ms = 6;
+  SourceAuthority authority = 7;
+  int64 version = 8;
+  string semantic = 9;
+  double confidence = 10;
+  string source_ref = 11;
+  CorrelationIdentity correlation = 12;
+}
+
+message StateSnapshot {
+  string token = 1;
+  int64 logical_time = 2;
+  google.protobuf.Timestamp created_at = 3;
+  double completeness = 4;
+  repeated CanonicalStateValue values = 5;
+  repeated RelationUpdate relations = 6;
+  repeated string missing = 7;
+  repeated string stale = 8;
+}
+
+message CandidateAction {
+  string candidate_id = 1;
+  string action_type = 2;
+  string target_component = 3;
+  string parameters_json = 4;
+}
+
+message CandidatePrediction {
+  string prediction_id = 1;
+  string snapshot_id = 2;
+  string candidate_id = 3;
+  string performance_json = 4;
+  string reliability_json = 5;
+  string cost_json = 6;
+  string future_state_json = 7;
+  double confidence = 8;
+  string model_version = 9;
+  string applicability = 10;
+  string fallback = 11;
+}
+
+message Action {
+  string action_id = 1;
+  string target_component = 2;
+  string action_type = 3;
+  string parameters_json = 4;
+  string preconditions_json = 5;
+  string idempotency_key = 6;
+  double timeout_seconds = 7;
+  string rollback_action_json = 8;
+  bool dry_run = 9;
+}
+
+message DecisionRecord {
+  string decision_id = 1;
+  string snapshot_id = 2;
+  string policy_version = 3;
+  repeated string candidate_ids = 4;
+  repeated string prediction_ids = 5;
+  repeated string model_versions = 6;
+  Action selected_action = 7;
+  string reason = 8;
+  repeated string constraints = 9;
+  google.protobuf.Timestamp timestamp = 10;
+}
+
+message Outcome {
+  string action_id = 1;
+  string status = 2;
+  google.protobuf.Timestamp started_at = 3;
+  google.protobuf.Timestamp completed_at = 4;
+  double actual_latency_seconds = 5;
+  double actual_cost = 6;
+  bool actual_success = 7;
+  string resource_delta_json = 8;
+  string error = 9;
+}
+
+message Feedback {
+  string feedback_id = 1;
+  string decision_id = 2;
+  string action_id = 3;
+  string prediction_id = 4;
+  Outcome outcome = 5;
+  string prediction_error_json = 6;
+  string policy_kpis_json = 7;
+  string calibration_sample_json = 8;
+  string replay_pointer = 9;
+  google.protobuf.Timestamp timestamp = 10;
+}
