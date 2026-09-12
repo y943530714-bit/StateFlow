@@ -79,6 +79,7 @@ def main(argv: list[str] | None = None) -> int:
     host, port = server.address
     print(f"StateFlow demo listening on http://{host}:{port}")
     print("POST /v1/chat/completions, /v1/responses, or /v1/messages")
+    print("State Plane API: /v1/state-plane/*")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

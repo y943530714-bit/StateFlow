@@ -1,10 +1,19 @@
 # Design-to-code mapping
 
-The two supplied design documents are implemented as a small Python reference
-stack.
+The original scheduler/state documents and Architecture Design Final v1.1 are
+implemented as an incrementally compatible Python reference stack.
 
 | Design concern | Implementation |
 | --- | --- |
+| Canonical State/Metric contracts and A0-A4 authority | `stateflow/state/contracts.py` |
+| Canonical key schema/alias/TTL registry | `stateflow/state/registry.py` |
+| Component/Deployment graphs and relation guardrails | `stateflow/state/plane.py` |
+| Immutable snapshot, freshness/completeness, change cursor | `stateflow/state/plane.py` |
+| Candidate-Action Prediction contract | `stateflow/prediction/` |
+| Policy/Decision/Action/Outcome/Feedback contracts | `stateflow/control/` |
+| Existing scheduler → v1.1 replay record bridge | `stateflow/scheduler/contract_bridge.py` |
+| Southbound/Northbound HTTP facade | `stateflow/state/api.py`, `stateflow/gateway/server/http.py` |
+| Gateway Request/Runtime/Instance projection | `stateflow/adapters/gateway.py` |
 | Agent State header and full schema | `stateflow/state/schema.py` |
 | Event + snapshot + hot view | `stateflow/state/event.py`, `stateflow/state/store/in_memory.py`, `stateflow/state/scheduling_view/` |
 | Success LCB and success gate | `success_predictor.py`, `success_gate.py` |
@@ -18,7 +27,7 @@ stack.
 | Backend/data-plane boundary | `backend/`, `gateway/service.py` |
 | Local HTTP harness | `gateway/server/http.py`, `stateflow/demo.py` |
 
-The hot path is intentionally explicit:
+The existing serving hot path remains intentionally explicit:
 
 ```text
 normalize -> state event -> hard filter -> critical override
@@ -30,3 +39,14 @@ The scheduler never uses a weighted blend of success, cost, and latency. Each
 later objective only operates on the candidates that survive the preceding
 gate. The current MVP stores prompt token counts and KV metadata, not prompt
 content or KV tensors.
+
+The v1.1 State Plane is additive at this stage.  It provides the generic
+read-only substrate while `InMemoryStateStore` continues to materialize the
+legacy `HarnessSchedulingView`.  The migration seam is
+`routing_control_bundle()`: it converts the current routing result into common
+Prediction and Decision/Action records without changing request behavior.
+
+The canonical HTTP surface is documented in
+[`STATE_PLANE_API_V1_1.md`](STATE_PLANE_API_V1_1.md). The existing
+`/v1/state/events` endpoint remains available for legacy AgentState events;
+new canonical operations use `/v1/state-plane/*`.

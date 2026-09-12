@@ -1,7 +1,8 @@
 # StateFlow
 
-StateFlow is a dependency-free MVP for scheduling stateful-agent requests with
-the design document's strict lexicographic policy:
+StateFlow is a dependency-free reference implementation of the StateFlow v1.1
+state/prediction-driven control architecture.  It keeps the existing request
+scheduler's strict lexicographic policy:
 
 1. maximize conservative task-success probability;
 2. among success-equivalent targets, minimize KV-aware effective cost;
@@ -10,6 +11,16 @@ the design document's strict lexicographic policy:
 
 The implementation includes:
 
+- a canonical key registry with source authority, provenance, TTL, CAS, and
+  idempotent writes;
+- Component and Deployment state graphs with a deliberately small set of
+  allowed cross-graph relations;
+- immutable state snapshot tokens with explicit completeness, missing/stale
+  fields, graph queries, and resumable change cursors;
+- transport-neutral Candidate-Action Prediction and
+  Decision/Action/Outcome/Feedback contracts;
+- a bridge that exports Success-First evaluations as replayable v1.1 control
+  records;
 - an Agent State v0.1 schema with event, snapshot, and hot scheduling view;
 - a thread-safe in-memory state store with epoch/sequence de-duplication and
   TTL-aware freshness metadata;
@@ -40,6 +51,11 @@ StateFlow adds `x-stateflow-decision-id`, `x-stateflow-selected-model`, and
 `x-stateflow-selected-replica` response headers. The state view is available
 at `/v1/state/view?session_id=demo-session`.
 
+The canonical v1.1 State Plane API is available under `/v1/state-plane/*`.
+For example, `/v1/state-plane/schema`, `/v1/state-plane/freshness`, and
+`POST /v1/state-plane/snapshots`. See
+[`docs/STATE_PLANE_API_V1_1.md`](docs/STATE_PLANE_API_V1_1.md).
+
 ## Integration boundary
 
 The gateway accepts `ProviderNeutralRequest`. Register one or more
@@ -49,9 +65,11 @@ native harness can publish `AgentStateEvent` objects directly or use the
 `HarnessAdapter` interface. State reporting failures are intentionally
 non-fatal to model requests.
 
-This repository is an MVP reference implementation. The durable event log,
-distributed snapshot store, tokenizer service, learned predictor, streaming
-passthrough, authentication, and production metrics are extension points.
+This repository is an MVP reference implementation. The current v1.1 State
+Plane backend is in-memory; durable event/metric storage, distributed logical
+snapshots, real Runtime/KV/K8s/DCGM adapters, learned predictors, action
+execution, authentication, and production metrics remain extension points.
 
-See [`RUNBOOK.md`](RUNBOOK.md) and [`docs/implementation.md`](docs/implementation.md)
-for the validation flow and design-to-code mapping.
+See [`RUNBOOK.md`](RUNBOOK.md), [`docs/implementation.md`](docs/implementation.md),
+and [`docs/DEVELOPMENT_PLAN_V1_1.md`](docs/DEVELOPMENT_PLAN_V1_1.md) for the
+validation flow, design-to-code mapping, and phased roadmap.

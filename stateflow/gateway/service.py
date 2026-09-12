@@ -5,10 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
+from ..adapters.gateway import GatewayStateProjector
 from ..backend.base import BackendError, BackendRegistry
 from ..scheduler.harness.success_first.scheduler import SuccessFirstScheduler
 from ..scheduler.types import NoFeasibleTarget, RoutingDecision
 from ..state.event import AgentStateEvent
+from ..state.plane import InMemoryStatePlane
 from ..state.schema import TargetCandidate, to_jsonable, utcnow
 from ..state.store.in_memory import InMemoryStateStore
 from .normalizer.request import ProviderNeutralRequest
@@ -52,15 +54,22 @@ class RequestGateway:
         state_store: InMemoryStateStore,
         targets: TargetRegistry,
         backends: BackendRegistry,
+        state_plane: InMemoryStatePlane | None = None,
     ) -> None:
         self.scheduler = scheduler
         self.state_store = state_store
         self.targets = targets
         self.backends = backends
+        self.state_plane = state_plane or InMemoryStatePlane()
+        self.state_projector = GatewayStateProjector(self.state_plane)
+        self.state_projection_errors = 0
+        self.last_state_projection_error = ""
         if self.scheduler.decision_sink is None:
             self.scheduler.decision_sink = self.state_store.record_routing_decision
 
     def handle(self, request: ProviderNeutralRequest) -> GatewayResponse:
+        target_list = tuple(self.targets.all())
+        self._project(lambda: self.state_projector.record_request(request, target_list))
         self._record_model_request(request)
         view = self.state_store.get_scheduling_view(request.session_id, request.task_id)
         # The request itself is authoritative for current prompt/decoder size;
@@ -71,7 +80,7 @@ class RequestGateway:
         view.required_capabilities.update(request.required_capabilities)
 
         try:
-            decision = self.scheduler.schedule(view, self.targets.all())
+            decision = self.scheduler.schedule(view, target_list)
         except NoFeasibleTarget as exc:
             self._record_failure(request, "NO_FEASIBLE_TARGET", str(exc))
             return GatewayResponse(
@@ -86,7 +95,7 @@ class RequestGateway:
             )
 
         target = next(
-            item for item in self.targets.all()
+            item for item in target_list
             if item.model_id == decision.selected_model
             and item.endpoint_id == decision.selected_endpoint
             and item.replica_id == decision.selected_replica
@@ -103,6 +112,7 @@ class RequestGateway:
                 headers={"x-stateflow-decision-id": decision.decision_id},
             )
 
+        self._project(lambda: self.state_projector.record_decision(request, decision))
         self._record_model_response(request, backend_response.output_tokens)
         return GatewayResponse(
             status_code=backend_response.status_code,
@@ -114,6 +124,15 @@ class RequestGateway:
                 "x-stateflow-selected-replica": decision.selected_replica,
             },
         )
+
+    def _project(self, operation) -> None:
+        """Keep State Plane materialization out of the serving failure path."""
+
+        try:
+            operation()
+        except Exception as exc:
+            self.state_projection_errors += 1
+            self.last_state_projection_error = type(exc).__name__
 
     def _record_model_request(self, request: ProviderNeutralRequest) -> None:
         self.state_store.append_event(

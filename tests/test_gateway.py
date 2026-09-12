@@ -4,6 +4,7 @@ import json
 import threading
 import unittest
 from urllib.request import Request, urlopen
+from urllib.parse import quote
 
 from stateflow.backend import BackendRegistry, InMemoryBackend
 from stateflow.gateway import RequestGateway, TargetRegistry, normalize_request
@@ -105,6 +106,15 @@ class GatewayTests(unittest.TestCase):
         self.assertTrue(state.scheduling.decision_history)
         self.assertEqual(state.model.selected_model, "logical-capable")
 
+        request_ref = gateway.state_projector.request_ref(request.request_id)
+        target_state = gateway.state_plane.get_state(request_ref, ("request.target_instance",))
+        self.assertEqual(
+            target_state[0].value,
+            gateway.state_projector.instance_ref(response.decision.selected_replica),
+        )
+        graph = gateway.state_plane.query_graph((request_ref,), depth=1)
+        self.assertIn("executing_on", {relation.relation_type for relation in graph.relations})
+
     def test_http_server_health_and_request_smoke(self) -> None:
         server = StateFlowHTTPServer(build_gateway(), port=0)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -127,6 +137,150 @@ class GatewayTests(unittest.TestCase):
                 body = json.loads(response.read().decode("utf-8"))
                 self.assertEqual(response.status, 200)
                 self.assertEqual(body["type"], "message")
+        finally:
+            server.shutdown()
+            thread.join(timeout=2)
+
+    def test_state_projection_failure_is_observable_and_nonfatal(self) -> None:
+        gateway = build_gateway()
+
+        def fail_projection(*args, **kwargs):
+            raise RuntimeError("projection unavailable")
+
+        gateway.state_projector.record_request = fail_projection
+        request = normalize_request(
+            "/v1/chat/completions",
+            {"model": "agent", "messages": [{"role": "user", "content": "hello"}]},
+            {"x-session-id": "projection-failure"},
+        )
+        response = gateway.handle(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(gateway.state_projection_errors, 1)
+        self.assertEqual(gateway.last_state_projection_error, "RuntimeError")
+
+    def test_state_plane_http_southbound_and_snapshot_api(self) -> None:
+        server = StateFlowHTTPServer(build_gateway(), port=0)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        host, port = server.address
+
+        def post(path: str, value: dict) -> tuple[int, dict]:
+            request = Request(
+                f"http://{host}:{port}{path}",
+                data=json.dumps(value).encode("utf-8"),
+                headers={"content-type": "application/json"},
+                method="POST",
+            )
+            with urlopen(request, timeout=2) as response:
+                return response.status, json.loads(response.read().decode("utf-8"))
+
+        try:
+            status, _ = post(
+                "/v1/state-plane/entities/upsert",
+                {
+                    "entities": [
+                        {
+                            "ref": "deployment/instance/http-i1",
+                            "graph": "deployment",
+                            "entity_type": "instance",
+                            "lifecycle": "ready",
+                        }
+                    ]
+                },
+            )
+            self.assertEqual(status, 200)
+            status, published = post(
+                "/v1/state-plane/state/publish",
+                {
+                    "updates": [
+                        {
+                            "entity_ref": "deployment/instance/http-i1",
+                            "key": "instance.ready",
+                            "value": True,
+                            "producer": "http-test",
+                            "authority": "STRUCTURED_LIFECYCLE",
+                        }
+                    ]
+                },
+            )
+            self.assertEqual(status, 200)
+            self.assertEqual(published["accepted"], 1)
+
+            status, snapshot = post(
+                "/v1/state-plane/snapshots",
+                {
+                    "entities": ["deployment/instance/http-i1"],
+                    "keys": ["instance.ready"],
+                    "max_age_ms": {"instance": 5000},
+                    "min_authority": "DIRECT_TELEMETRY",
+                },
+            )
+            self.assertEqual(status, 201)
+            self.assertEqual(snapshot["completeness"], 1.0)
+            self.assertTrue(snapshot["values"][0]["value"])
+
+            for value in (1.0, 3.0):
+                status, metrics = post(
+                    "/v1/state-plane/metrics/publish",
+                    {
+                        "samples": [
+                            {
+                                "entity_ref": "deployment/instance/http-i1",
+                                "metric_key": "instance.allocated_gpu",
+                                "value": value,
+                                "unit": "gpu",
+                                "producer": "http-test",
+                            }
+                        ]
+                    },
+                )
+                self.assertEqual(status, 200)
+                self.assertEqual(metrics["accepted"], 1)
+            metric_entity = quote("deployment/instance/http-i1", safe="")
+            with urlopen(
+                f"http://{host}:{port}/v1/state-plane/metrics?entity_ref={metric_entity}&keys=instance.allocated_gpu&agg=avg",
+                timeout=2,
+            ) as response:
+                metrics = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(metrics["values"][0]["value"], 2.0)
+
+            status, event = post(
+                "/v1/state-plane/events/publish",
+                {
+                    "event_id": "event-http-1",
+                    "event_type": "instance_ready",
+                    "subject_ref": "deployment/instance/http-i1",
+                    "producer": "http-test",
+                },
+            )
+            self.assertEqual(status, 200)
+            self.assertEqual(event["accepted"], 1)
+            status, heartbeat = post(
+                "/v1/state-plane/heartbeat",
+                {
+                    "subject_ref": "deployment/instance/http-i1",
+                    "producer": "http-test",
+                    "source_watermark": "42",
+                },
+            )
+            self.assertEqual(status, 200)
+            self.assertEqual(heartbeat["heartbeat"]["source_watermark"], "42")
+
+            token = quote(snapshot["token"], safe="")
+            with urlopen(
+                f"http://{host}:{port}/v1/state-plane/snapshots/{token}", timeout=2
+            ) as response:
+                frozen = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(frozen["token"], snapshot["token"])
+
+            entity = quote("deployment/instance/http-i1", safe="")
+            with urlopen(
+                f"http://{host}:{port}/v1/state-plane/state?entity_ref={entity}&keys=instance.ready",
+                timeout=2,
+            ) as response:
+                current = json.loads(response.read().decode("utf-8"))
+                self.assertTrue(current["values"][0]["value"])
         finally:
             server.shutdown()
             thread.join(timeout=2)

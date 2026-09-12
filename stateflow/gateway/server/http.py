@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from urllib.parse import parse_qs, urlparse
 from typing import Any
 
 from ...state.event import AgentStateEvent
+from ...state.api import StatePlaneAPI
 from ...state.schema import to_jsonable
 from ..normalizer.request import normalize_request
 from ..service import RequestGateway
@@ -32,14 +32,30 @@ class StateFlowHTTPServer:
 
     def _handler_class(self):
         gateway = self.gateway
+        state_plane_api = StatePlaneAPI(gateway.state_plane)
 
         class Handler(BaseHTTPRequestHandler):
-            server_version = "StateFlow/0.1"
+            server_version = "StateFlow/0.2"
 
             def do_GET(self) -> None:  # noqa: N802
                 parsed = urlparse(self.path)
+                if state_plane_api.handles(parsed.path):
+                    try:
+                        response = state_plane_api.get(parsed.path, parse_qs(parsed.query))
+                        self._write(response.status_code, response.payload)
+                    except KeyError as exc:
+                        self._write(404, {"error": {"type": "not_found", "message": str(exc)}})
+                    except ValueError as exc:
+                        self._write(400, {"error": {"type": "invalid_request", "message": str(exc)}})
+                    return
                 if parsed.path == "/healthz":
-                    self._write(200, {"status": "ok"})
+                    self._write(
+                        200,
+                        {
+                            "status": "ok",
+                            "state_projection_errors": gateway.state_projection_errors,
+                        },
+                    )
                     return
                 if parsed.path == "/v1/state/view":
                     query = parse_qs(parsed.query)
@@ -59,6 +75,10 @@ class StateFlowHTTPServer:
                 try:
                     body = self._read_json()
                     parsed = urlparse(self.path)
+                    if state_plane_api.handles(parsed.path):
+                        response = state_plane_api.post(parsed.path, body)
+                        self._write(response.status_code, response.payload)
+                        return
                     if parsed.path == "/v1/state/events":
                         event = AgentStateEvent.from_mapping(body)
                         result = gateway.state_store.append_event(event)
@@ -72,6 +92,8 @@ class StateFlowHTTPServer:
                     self._write(404, {"error": {"message": "not found"}})
                 except ValueError as exc:
                     self._write(400, {"error": {"type": "invalid_request", "message": str(exc)}})
+                except KeyError as exc:
+                    self._write(404, {"error": {"type": "not_found", "message": str(exc)}})
                 except Exception as exc:  # pragma: no cover - defensive HTTP boundary
                     self._write(500, {"error": {"type": "internal_error", "message": str(exc)}})
 
