@@ -1,16 +1,24 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 import unittest
 
 from stateflow.adapters import (
     CollectionReport,
     DCGMSourceClient,
     KVMetadataSourceClient,
+    KubernetesWatchClient,
+    KubernetesWatchCursor,
     KubernetesSourceClient,
+    LMCACHE_KV_PROFILE,
+    MOONCAKE_KV_PROFILE,
     ObservabilityBridge,
     PollingAdapterRunner,
+    RayServeSourceClient,
+    SGLangSourceClient,
     SourceClientError,
+    SourceHTTPError,
     VLLMSourceClient,
     parse_prometheus,
 )
@@ -37,6 +45,26 @@ DCGM_FI_DEV_XID_ERRORS{gpu="0",UUID="GPU-a",Hostname="node-a"} 0
 DCGM_FI_DEV_FB_USED{gpu="1",UUID="GPU-b",Hostname="node-a"} 16384
 DCGM_FI_DEV_GPU_UTIL{gpu="1",UUID="GPU-b",Hostname="node-a"} 25
 DCGM_FI_DEV_XID_ERRORS{gpu="1",UUID="GPU-b",Hostname="node-a"} 31
+"""
+
+SGLANG_METRICS = """
+sglang:num_queue_reqs 4
+sglang:num_running_reqs 6
+sglang:token_usage 0.72
+sglang:gen_throughput 123.5
+sglang:time_to_first_token_seconds_bucket{le="0.1"} 80
+sglang:time_to_first_token_seconds_bucket{le="0.2"} 95
+sglang:time_to_first_token_seconds_bucket{le="+Inf"} 100
+sglang:time_per_output_token_seconds_bucket{le="0.01"} 95
+sglang:time_per_output_token_seconds_bucket{le="+Inf"} 100
+"""
+
+RAY_SERVE_METRICS = """
+ray_serve_deployment_queued_queries{application="agent",deployment="Runtime"} 2
+ray_serve_replica_processing_queries{application="agent",deployment="Runtime",replica="a"} 3
+ray_serve_replica_processing_queries{application="agent",deployment="Runtime",replica="b"} 4
+ray_serve_deployment_queued_queries{application="other",deployment="Runtime"} 50
+ray_serve_replica_processing_queries{application="other",deployment="Runtime",replica="c"} 60
 """
 
 
@@ -90,6 +118,39 @@ class PrometheusSourceTests(unittest.TestCase):
     def test_prometheus_parser_rejects_malformed_samples(self) -> None:
         with self.assertRaises(SourceClientError):
             parse_prometheus("not a prometheus sample")
+
+    def test_sglang_profile_projects_runtime_metrics(self) -> None:
+        client = SGLangSourceClient(
+            "http://sglang:30000",
+            runtime_id="runtime-sglang",
+            instance_id="replica-sglang",
+            fetcher=text_fetcher(SGLANG_METRICS),
+        )
+
+        observation = client.collect()
+
+        self.assertEqual(observation.queue_depth, 4)
+        self.assertEqual(observation.running, 6)
+        self.assertAlmostEqual(observation.ttft_p95_seconds or 0.0, 0.2)
+        self.assertAlmostEqual(observation.tpot_p95_seconds or 0.0, 0.01)
+        self.assertEqual(observation.decode_tokens_per_second, 123.5)
+        self.assertEqual(observation.kv_usage_ratio, 0.72)
+        self.assertEqual(observation.source_ref.backend, "sglang-prometheus")
+
+    def test_ray_serve_profile_aggregates_replica_metrics(self) -> None:
+        client = RayServeSourceClient(
+            "http://ray-head:8080/metrics",
+            runtime_id="serve-app",
+            instance_id="serve-deployment",
+            metric_labels={"application": "agent", "deployment": "Runtime"},
+            fetcher=text_fetcher(RAY_SERVE_METRICS),
+        )
+
+        observation = client.collect()
+
+        self.assertEqual(observation.queue_depth, 2)
+        self.assertEqual(observation.running, 7)
+        self.assertEqual(observation.implementation, "ray-serve")
 
 
 class JSONSourceTests(unittest.TestCase):
@@ -201,6 +262,176 @@ class JSONSourceTests(unittest.TestCase):
         self.assertTrue(observation.cache_hit)
         self.assertEqual(observation.locations[0].tier, "hbm")
         self.assertEqual(observation.source_ref.backend, "mooncake")
+
+    def test_native_mooncake_and_lmcache_profiles(self) -> None:
+        mooncake = KVMetadataSourceClient(
+            "http://mooncake/metadata",
+            profile=MOONCAKE_KV_PROFILE,
+            fetcher=lambda url, headers, timeout: {
+                "data": {
+                    "objects": [
+                        {
+                            "object_id": "moon-a",
+                            "requests": ["request-a"],
+                            "replicas": [{"node_id": "node-a", "entity_type": "node"}],
+                            "size": 8192,
+                            "num_replicas": 1,
+                            "revision": "51",
+                        }
+                    ]
+                }
+            },
+        ).collect()[0]
+        lmcache = KVMetadataSourceClient(
+            "http://lmcache/metadata",
+            profile=LMCACHE_KV_PROFILE,
+            fetcher=lambda url, headers, timeout: {
+                "chunks": [
+                    {
+                        "chunk_id": "chunk-a",
+                        "request_ids": "request-b",
+                        "location": "node-b/gpu/0",
+                        "chunk_size": 16384,
+                        "num_locations": 1,
+                        "revision": 9,
+                    }
+                ]
+            },
+        ).collect()[0]
+
+        self.assertEqual(mooncake.kv_id, "moon-a")
+        self.assertEqual(mooncake.locations[0].identifier, "node-a")
+        self.assertEqual(mooncake.source_ref.backend, "mooncake")
+        self.assertEqual(lmcache.kv_id, "chunk-a")
+        self.assertEqual(lmcache.size_bytes, 16384)
+        self.assertEqual(lmcache.request_ids, ("request-b",))
+        self.assertEqual(lmcache.source_ref.backend, "lmcache")
+
+    def test_kubernetes_watch_advances_bookmarks_and_decodes_updates(self) -> None:
+        source = KubernetesSourceClient(
+            "https://kubernetes.default.svc",
+            cluster_id="prod-a",
+            namespace="serving",
+            fetcher=lambda url, headers, timeout: {},
+        )
+        urls = []
+
+        def watch_fetcher(url, headers, timeout):
+            urls.append(url)
+            if "/nodes?" in url:
+                return "\n".join(
+                    (
+                        json.dumps(
+                            {
+                                "type": "MODIFIED",
+                                "object": {
+                                    "metadata": {
+                                        "name": "node-a",
+                                        "uid": "node-a-uid",
+                                        "resourceVersion": "102",
+                                    },
+                                    "status": {
+                                        "conditions": [{"type": "Ready", "status": "True"}]
+                                    },
+                                },
+                            }
+                        ),
+                        json.dumps(
+                            {
+                                "type": "BOOKMARK",
+                                "object": {"metadata": {"resourceVersion": "105"}},
+                            }
+                        ),
+                    )
+                )
+            return "\n".join(
+                (
+                    json.dumps(
+                        {
+                            "type": "DELETED",
+                            "object": {
+                                "metadata": {
+                                    "name": "runtime-a",
+                                    "namespace": "serving",
+                                    "uid": "pod-a",
+                                    "resourceVersion": "204",
+                                },
+                                "spec": {"nodeName": "node-a", "containers": []},
+                                "status": {"phase": "Running"},
+                            },
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "type": "BOOKMARK",
+                            "object": {"metadata": {"resourceVersion": "205"}},
+                        }
+                    ),
+                )
+            )
+
+        batch = KubernetesWatchClient(source, fetcher=watch_fetcher).collect(
+            KubernetesWatchCursor("101", "201")
+        )
+
+        self.assertFalse(batch.relisted)
+        self.assertEqual(len(batch.observations), 2)
+        self.assertEqual(batch.observations[0].node_id, "node-a")
+        self.assertTrue(batch.observations[1].deleted)
+        self.assertFalse(batch.observations[1].instance_ready)
+        self.assertEqual(batch.cursor, KubernetesWatchCursor("105", "205"))
+        self.assertEqual(batch.events, 4)
+        self.assertTrue(all("allowWatchBookmarks=true" in url for url in urls))
+
+    def test_kubernetes_watch_relists_after_resource_version_410(self) -> None:
+        node_list = {
+            "kind": "NodeList",
+            "metadata": {"resourceVersion": "301"},
+            "items": [
+                {
+                    "metadata": {"name": "node-a", "resourceVersion": "300"},
+                    "status": {
+                        "conditions": [{"type": "Ready", "status": "True"}]
+                    },
+                }
+            ],
+        }
+        pod_list = {
+            "kind": "PodList",
+            "metadata": {"resourceVersion": "401"},
+            "items": [],
+        }
+
+        def list_fetcher(url, headers, timeout):
+            return node_list if url.endswith("/nodes") else pod_list
+
+        source = KubernetesSourceClient(
+            "https://kubernetes.default.svc",
+            cluster_id="prod-a",
+            fetcher=list_fetcher,
+        )
+        error = json.dumps(
+            {
+                "type": "ERROR",
+                "object": {"kind": "Status", "code": 410, "reason": "Expired"},
+            }
+        )
+        batch = KubernetesWatchClient(
+            source, fetcher=lambda url, headers, timeout: error
+        ).collect(KubernetesWatchCursor("100", "200"))
+
+        self.assertTrue(batch.relisted)
+        self.assertEqual(batch.cursor, KubernetesWatchCursor("301", "401"))
+        self.assertEqual(len(batch.observations), 1)
+
+        def expired_fetcher(url, headers, timeout):
+            raise SourceHTTPError(url, 410)
+
+        http_batch = KubernetesWatchClient(
+            source, fetcher=expired_fetcher
+        ).collect(KubernetesWatchCursor("100", "200"))
+        self.assertTrue(http_batch.relisted)
+        self.assertEqual(http_batch.cursor, KubernetesWatchCursor("301", "401"))
 
 
 class RunnerTests(unittest.TestCase):

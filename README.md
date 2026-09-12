@@ -30,8 +30,9 @@ The implementation includes:
 - a generic proxy harness adapter plus an asynchronous best-effort reporter;
 - protocol-neutral Runtime, KV, Kubernetes, and DCGM semantic adapters with a
   shared correlation resolver and request-scoped graph materialization;
-- dependency-free vLLM/DCGM Prometheus, Kubernetes API, and KV metadata HTTP
-  source clients with failure-isolated polling runners;
+- dependency-free vLLM/SGLang/Ray Serve/DCGM Prometheus, Kubernetes list-watch,
+  and profiled Mooncake/LMCache metadata HTTP source clients with
+  failure-isolated polling runners;
 - an in-memory backend and a small `urllib` OpenAI-compatible backend;
 - a standard-library HTTP server for local integration tests.
 
@@ -71,9 +72,8 @@ non-fatal to model requests.
 
 This repository is an MVP reference implementation. The current v1.1 State
 Plane backend is in-memory; durable event/metric storage, distributed logical
-snapshots, source-specific Runtime/KV/K8s/DCGM collectors and watch clients,
-learned predictors, action execution, authentication, and production metrics
-remain extension points.
+snapshots, target-environment source validation, learned predictors, action
+execution, authentication, and production metrics remain extension points.
 
 See [`RUNBOOK.md`](RUNBOOK.md), [`docs/implementation.md`](docs/implementation.md),
 [`docs/DEVELOPMENT_PLAN_V1_1.md`](docs/DEVELOPMENT_PLAN_V1_1.md), and

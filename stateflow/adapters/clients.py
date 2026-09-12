@@ -11,6 +11,16 @@ from ..state.schema import utcnow
 from .dcgm import DCGMStateAdapter, HardwareObservation
 from .kubernetes import DeploymentObservation, KubernetesStateAdapter
 from .kv import KVLocation, KVObservation, KVStateAdapter
+from .profiles import (
+    KVMetadataProfile,
+    LMCACHE_KV_PROFILE,
+    MOONCAKE_KV_PROFILE,
+    NORMALIZED_KV_PROFILE,
+    RAY_SERVE_RUNTIME_PROFILE,
+    RuntimeMetricsProfile,
+    SGLANG_RUNTIME_PROFILE,
+    VLLM_RUNTIME_PROFILE,
+)
 from .runtime import RuntimeObservation, RuntimeStateAdapter
 from .source import (
     JSONFetcher,
@@ -32,8 +42,8 @@ class CollectionReport:
     watermark: str
 
 
-class VLLMSourceClient:
-    """Read vLLM's Prometheus endpoint and publish one runtime window."""
+class PrometheusRuntimeSourceClient:
+    """Read a profiled Prometheus endpoint and publish one runtime window."""
 
     def __init__(
         self,
@@ -41,6 +51,8 @@ class VLLMSourceClient:
         *,
         runtime_id: str,
         instance_id: str,
+        profile: RuntimeMetricsProfile,
+        metric_labels: Mapping[str, str] | None = None,
         node_id: str = "",
         timeout: float = 2.0,
         fetcher: TextFetcher = fetch_text,
@@ -48,6 +60,8 @@ class VLLMSourceClient:
         self.endpoint = _endpoint(endpoint, "/metrics")
         self.runtime_id = runtime_id
         self.instance_id = instance_id
+        self.profile = profile
+        self.metric_labels = dict(metric_labels or {})
         self.node_id = node_id
         self.timeout = timeout
         self.fetcher = fetcher
@@ -62,6 +76,7 @@ class VLLMSourceClient:
         payload = self.fetcher(self.endpoint, {}, self.timeout)
         metrics = parse_prometheus(payload)
         watermark = stable_watermark(payload)
+        values = self.profile.project(metrics, self.metric_labels)
         return RuntimeObservation(
             runtime_id=self.runtime_id,
             instance_id=self.instance_id,
@@ -69,23 +84,19 @@ class VLLMSourceClient:
             request_id=request_id,
             trace_id=trace_id,
             observed_at=observed_at or utcnow(),
-            queue_depth=_integer(metrics.aggregate("vllm:num_requests_waiting")),
-            running=_integer(metrics.aggregate("vllm:num_requests_running")),
-            ttft_p95_seconds=metrics.histogram_quantile(
-                "vllm:time_to_first_token_seconds", 0.95
-            ),
-            tpot_p95_seconds=metrics.histogram_quantile(
-                "vllm:inter_token_latency_seconds", 0.95
-            ),
-            kv_usage_ratio=metrics.aggregate(
-                "vllm:kv_cache_usage_perc", mode="max"
-            ),
+            queue_depth=_integer(values["queue_depth"]),
+            running=_integer(values["running"]),
+            ttft_p95_seconds=values["ttft_p95_seconds"],
+            tpot_p95_seconds=values["tpot_p95_seconds"],
+            prefill_tokens_per_second=values["prefill_tokens_per_second"],
+            decode_tokens_per_second=values["decode_tokens_per_second"],
+            kv_usage_ratio=values["kv_usage_ratio"],
             health="healthy",
             ready=True,
-            implementation="vllm",
+            implementation=self.profile.name,
             watermark=watermark,
             observation_id=watermark,
-            source_ref=SourceRef("vllm-prometheus", self.endpoint, trace_id),
+            source_ref=SourceRef(self.profile.source_backend, self.endpoint, trace_id),
         )
 
     def collect_and_publish(
@@ -98,8 +109,33 @@ class VLLMSourceClient:
         observation = self.collect(request_id=request_id, trace_id=trace_id)
         report = adapter.publish(observation)
         return CollectionReport(
-            "vllm", 1, report.accepted, report.rejected, observation.watermark
+            self.profile.name,
+            1,
+            report.accepted,
+            report.rejected,
+            observation.watermark,
         )
+
+
+class VLLMSourceClient(PrometheusRuntimeSourceClient):
+    """Read vLLM's Prometheus endpoint and publish one runtime window."""
+
+    def __init__(self, endpoint: str, **kwargs: Any) -> None:
+        super().__init__(endpoint, profile=VLLM_RUNTIME_PROFILE, **kwargs)
+
+
+class SGLangSourceClient(PrometheusRuntimeSourceClient):
+    """Read SGLang's Prometheus endpoint using the built-in metric aliases."""
+
+    def __init__(self, endpoint: str, **kwargs: Any) -> None:
+        super().__init__(endpoint, profile=SGLANG_RUNTIME_PROFILE, **kwargs)
+
+
+class RayServeSourceClient(PrometheusRuntimeSourceClient):
+    """Read Ray Serve's Prometheus endpoint as a runtime observation."""
+
+    def __init__(self, endpoint: str, **kwargs: Any) -> None:
+        super().__init__(endpoint, profile=RAY_SERVE_RUNTIME_PROFILE, **kwargs)
 
 
 class DCGMSourceClient:
@@ -204,16 +240,52 @@ class KubernetesSourceClient:
         self.headers = {"Authorization": f"Bearer {bearer_token}"} if bearer_token else {}
 
     def collect(self, *, observed_at: datetime | None = None) -> tuple[DeploymentObservation, ...]:
+        node_payload, pod_payload = self.list_payloads()
+        return self.decode(node_payload, pod_payload, observed_at=observed_at)
+
+    def list_payloads(self) -> tuple[Any, Any]:
         node_payload = self.fetcher(
             self.api_server + "/api/v1/nodes", self.headers, self.timeout
         )
-        pod_path = (
-            f"/api/v1/namespaces/{self.namespace}/pods"
-            if self.namespace
-            else "/api/v1/pods"
+        pod_payload = self.fetcher(
+            self.api_server + self.resource_path("pods"), self.headers, self.timeout
         )
-        pod_payload = self.fetcher(self.api_server + pod_path, self.headers, self.timeout)
-        return self.decode(node_payload, pod_payload, observed_at=observed_at)
+        return node_payload, pod_payload
+
+    def resource_path(self, resource: str) -> str:
+        if resource == "nodes":
+            return "/api/v1/nodes"
+        if resource == "pods":
+            return (
+                f"/api/v1/namespaces/{self.namespace}/pods"
+                if self.namespace
+                else "/api/v1/pods"
+            )
+        raise ValueError(f"unsupported Kubernetes resource: {resource}")
+
+    def decode_resource(
+        self,
+        resource: str,
+        item: Mapping[str, Any],
+        *,
+        observed_at: datetime | None = None,
+        deleted: bool = False,
+    ) -> tuple[DeploymentObservation, ...]:
+        if resource == "nodes":
+            return self.decode(
+                {"kind": "NodeList", "items": [item]},
+                {"kind": "PodList", "items": []},
+                observed_at=observed_at,
+                deleted=deleted,
+            )
+        if resource == "pods":
+            return self.decode(
+                {"kind": "NodeList", "items": []},
+                {"kind": "PodList", "items": [item]},
+                observed_at=observed_at,
+                deleted=deleted,
+            )
+        raise ValueError(f"unsupported Kubernetes resource: {resource}")
 
     def decode(
         self,
@@ -221,6 +293,7 @@ class KubernetesSourceClient:
         pod_payload: Any,
         *,
         observed_at: datetime | None = None,
+        deleted: bool = False,
     ) -> tuple[DeploymentObservation, ...]:
         nodes = _items(node_payload, "NodeList")
         pods = _items(pod_payload, "PodList")
@@ -237,7 +310,11 @@ class KubernetesSourceClient:
                     cluster_id=self.cluster_id,
                     node_id=node_id,
                     observed_at=timestamp,
-                    node_health="healthy" if _ready(status) else "unhealthy",
+                    node_health=(
+                        "deleted"
+                        if deleted
+                        else "healthy" if _ready(status) else "unhealthy"
+                    ),
                     node_allocatable=_allocatable(status.get("allocatable")),
                     labels=_string_mapping(metadata.get("labels")),
                     watermark=str(metadata.get("resourceVersion", "")),
@@ -245,6 +322,7 @@ class KubernetesSourceClient:
                     source_ref=SourceRef(
                         "kubernetes", f"nodes/{node_id}@{metadata.get('resourceVersion', '')}"
                     ),
+                    deleted=deleted,
                 )
             )
         for pod in pods:
@@ -275,7 +353,7 @@ class KubernetesSourceClient:
                     runtime_id=runtime_id,
                     namespace=str(metadata.get("namespace", self.namespace)),
                     pod_uid=str(metadata.get("uid", "")),
-                    instance_ready=_ready(status),
+                    instance_ready=False if deleted else _ready(status),
                     allocated_gpu=_pod_gpu(spec),
                     labels=labels,
                     watermark=str(metadata.get("resourceVersion", "")),
@@ -286,6 +364,7 @@ class KubernetesSourceClient:
                         f"{metadata.get('namespace', '')}/{metadata.get('name', '')}"
                         f"@{metadata.get('resourceVersion', '')}",
                     ),
+                    deleted=deleted,
                 )
             )
         return tuple(observations)
@@ -310,30 +389,38 @@ class KVMetadataSourceClient:
         self,
         endpoint: str,
         *,
-        backend: str = "kv-metadata",
+        backend: str | None = None,
+        profile: KVMetadataProfile = NORMALIZED_KV_PROFILE,
         timeout: float = 2.0,
         fetcher: JSONFetcher = fetch_json,
     ) -> None:
         self.endpoint = endpoint
-        self.backend = backend
+        self.profile = profile
+        self.backend = backend or profile.name
         self.timeout = timeout
         self.fetcher = fetcher
 
     def collect(self, *, observed_at: datetime | None = None) -> tuple[KVObservation, ...]:
         payload = self.fetcher(self.endpoint, {}, self.timeout)
-        raw_items = payload.get("items", ()) if isinstance(payload, Mapping) else payload
-        if not isinstance(raw_items, (list, tuple)):
-            raise SourceClientError("KV metadata response must be a list or contain items")
+        raw_items = self.profile.items(payload)
+        if not raw_items and not _empty_kv_payload(payload, self.profile):
+            raise SourceClientError(
+                f"KV metadata response does not match {self.profile.name} profile"
+            )
         timestamp = observed_at or utcnow()
         observations: list[KVObservation] = []
         for raw in raw_items:
             item = _mapping(raw, "kv item")
-            kv_id = str(item.get("kv_id") or item.get("id") or item.get("key") or "")
+            value = self.profile.value
+            kv_id = str(value(item, "kv_id", ""))
             if not kv_id:
                 raise SourceClientError("KV metadata item is missing kv_id")
-            locations = tuple(_kv_location(value) for value in item.get("locations", ()) or ())
-            watermark = str(item.get("version") or item.get("watermark") or "")
-            request_ids = item.get("request_ids", ()) or ()
+            raw_locations = value(item, "locations", ()) or ()
+            if isinstance(raw_locations, (str, Mapping)):
+                raw_locations = (raw_locations,)
+            locations = tuple(_kv_location(location) for location in raw_locations)
+            watermark = str(value(item, "watermark", ""))
+            request_ids = value(item, "request_ids", ()) or ()
             if isinstance(request_ids, str):
                 request_ids = (request_ids,)
             observations.append(
@@ -342,13 +429,13 @@ class KVMetadataSourceClient:
                     observed_at=timestamp,
                     request_ids=tuple(str(value) for value in request_ids),
                     locations=locations,
-                    size_bytes=_optional_int(item.get("size_bytes", item.get("size"))),
-                    replica_count=_optional_int(item.get("replica_count")),
-                    cache_hit=_optional_bool(item.get("cache_hit")),
-                    transfer_state=_optional_string(item.get("transfer_state")),
-                    soft_pin=_optional_bool(item.get("soft_pin")),
-                    lifecycle=str(item.get("lifecycle", "active")),
-                    trace_id=str(item.get("trace_id", "")),
+                    size_bytes=_optional_int(value(item, "size_bytes")),
+                    replica_count=_optional_int(value(item, "replica_count")),
+                    cache_hit=_optional_bool(value(item, "cache_hit")),
+                    transfer_state=_optional_string(value(item, "transfer_state")),
+                    soft_pin=_optional_bool(value(item, "soft_pin")),
+                    lifecycle=str(value(item, "lifecycle", "active")),
+                    trace_id=str(value(item, "trace_id", "")),
                     watermark=watermark,
                     observation_id=f"{kv_id}:{watermark}" if watermark else "",
                     source_ref=SourceRef(self.backend, f"{self.endpoint}#{kv_id}"),
@@ -466,7 +553,14 @@ def _kv_location(value: Any) -> KVLocation:
     if isinstance(value, str):
         return KVLocation(value)
     item = _mapping(value, "kv location")
-    identifier = str(item.get("identifier") or item.get("id") or item.get("ref") or "")
+    identifier = str(
+        item.get("identifier")
+        or item.get("id")
+        or item.get("ref")
+        or item.get("worker_id")
+        or item.get("node_id")
+        or ""
+    )
     if not identifier:
         raise SourceClientError("KV location is missing identifier")
     return KVLocation(
@@ -499,10 +593,31 @@ def _optional_string(value: Any) -> str | None:
     return None if value is None else str(value)
 
 
+def _empty_kv_payload(payload: Any, profile: KVMetadataProfile) -> bool:
+    if isinstance(payload, (list, tuple)):
+        return not payload
+    if not isinstance(payload, Mapping):
+        return False
+    for path in profile.item_paths:
+        value: Any = payload
+        for part in path:
+            if not isinstance(value, Mapping) or part not in value:
+                break
+            value = value[part]
+        else:
+            return isinstance(value, (list, tuple)) and not value
+    return False
+
+
 __all__ = [
     "CollectionReport",
     "DCGMSourceClient",
     "KVMetadataSourceClient",
     "KubernetesSourceClient",
+    "LMCACHE_KV_PROFILE",
+    "MOONCAKE_KV_PROFILE",
+    "PrometheusRuntimeSourceClient",
+    "RayServeSourceClient",
+    "SGLangSourceClient",
     "VLLMSourceClient",
 ]

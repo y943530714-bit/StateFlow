@@ -53,9 +53,12 @@
 - [ ] gRPC API 与独立 Adapter 进程。
 - [x] Runtime/KV/Kubernetes/DCGM 协议无关语义 Adapter 与共享 Correlation Resolver。
 - [x] `Request↔Runtime↔Instance↔Node↔KV↔Resource` 请求级关系物化。
-- [x] vLLM/DCGM Prometheus、Kubernetes list API、KV metadata sidecar source client。
+- [x] vLLM/SGLang/Ray Serve/DCGM Prometheus、Kubernetes list-watch、KV metadata
+  sidecar source client。
 - [x] Source timeout/error 隔离、内容 watermark、幂等 observation 与 polling backoff。
-- [ ] SGLang/Ray 与原生 Mooncake/LMCache profile；Kubernetes list-watch/410 recovery。
+- [x] 声明式 Runtime metric profile、Mooncake/LMCache JSON profile、Kubernetes
+  Node/Pod 双游标与 410 relist recovery（fixture 验证）。
+- [ ] 目标环境版本联调与 profile 差异校验。
 - [ ] WatchState 长连接的 backpressure/coalesce；当前为可恢复 HTTP cursor polling。
 - [ ] 持久 Hot Store、Relation Index 和 adapter watermark。
 
@@ -119,7 +122,7 @@
 | --- | --- | --- |
 | M1（本轮） | v1.1 contracts、in-memory State Plane、routing bridge、测试、文档 | 全量回归通过；旧 API 兼容 |
 | M2（当前） | HTTP Southbound/Northbound API；Gateway Request/Runtime adapter | 功能与集成测试已通过；已有进程内 Snapshot 延迟基线；待补 gRPC 与独立 adapter |
-| M3（进行中） | 语义 Adapter、完整两图物化、vLLM/DCGM/K8s/KV HTTP source client 已完成；待补其余 profile 与进程化 | Request↔Instance↔Node↔KV 可重建；真实数据源联调通过 |
+| M3（进行中） | 语义 Adapter、完整两图物化、Runtime/DCGM/K8s/KV profile 与 list-watch 已完成；待补进程化与目标环境联调 | Request↔Instance↔Node↔KV 可重建；真实数据源联调通过 |
 | M4 | Analytical Prediction service + shadow journal/replay | 预测误差与 coverage 可观测 |
 | M5 | Agent-aware KV dry-run → controlled closed-loop | 安全指标达标且相对 baseline 有增量 |
 | M6 | Cross-layer Routing shadow → controlled closed-loop | SLO/成本/KV/OOM 指标达标且可回退 |

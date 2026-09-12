@@ -7,11 +7,19 @@ import json
 import math
 import re
 from typing import Any, Callable, Mapping
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 
 class SourceClientError(RuntimeError):
     pass
+
+
+class SourceHTTPError(SourceClientError):
+    def __init__(self, url: str, status_code: int) -> None:
+        super().__init__(f"source request failed for {url}: HTTP {status_code}")
+        self.url = url
+        self.status_code = status_code
 
 
 TextFetcher = Callable[[str, Mapping[str, str], float], str]
@@ -27,6 +35,8 @@ def fetch_text(
     try:
         with urlopen(request, timeout=timeout) as response:
             return response.read().decode("utf-8")
+    except HTTPError as exc:
+        raise SourceHTTPError(url, exc.code) from exc
     except Exception as exc:
         raise SourceClientError(f"source request failed for {url}: {type(exc).__name__}") from exc
 
@@ -185,6 +195,7 @@ __all__ = [
     "PrometheusSample",
     "PrometheusSnapshot",
     "SourceClientError",
+    "SourceHTTPError",
     "TextFetcher",
     "fetch_json",
     "fetch_text",

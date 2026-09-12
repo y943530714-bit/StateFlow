@@ -36,6 +36,7 @@ class DeploymentObservation:
     watermark: str = ""
     observation_id: str = ""
     source_ref: SourceRef | None = None
+    deleted: bool = False
 
 
 class KubernetesStateAdapter(StatePlaneAdapter):
@@ -85,7 +86,13 @@ class KubernetesStateAdapter(StatePlaneAdapter):
                 node_ref,
                 GraphKind.DEPLOYMENT,
                 "node",
-                lifecycle="ready" if observation.node_health in {None, "healthy", "ready"} else "degraded",
+                lifecycle=(
+                    "deleted"
+                    if observation.deleted
+                    else "ready"
+                    if observation.node_health in {None, "healthy", "ready"}
+                    else "degraded"
+                ),
                 parent_ref=cluster_ref,
                 labels={"node_id": observation.node_id, **dict(observation.labels)},
             )
@@ -118,7 +125,13 @@ class KubernetesStateAdapter(StatePlaneAdapter):
                     instance_ref,
                     GraphKind.DEPLOYMENT,
                     "instance",
-                    lifecycle="ready" if observation.instance_ready is not False else "unavailable",
+                    lifecycle=(
+                        "deleted"
+                        if observation.deleted
+                        else "ready"
+                        if observation.instance_ready is not False
+                        else "unavailable"
+                    ),
                     owner_component_ref=runtime_ref,
                     parent_ref=node_ref,
                     labels={
