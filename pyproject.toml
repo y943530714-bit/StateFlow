@@ -4,10 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stateflow"
-version = "0.3.1"
+version = "0.3.2"
 description = "State and prediction driven control plane for stateful agent infrastructure"
 requires-python = ">=3.10"
 dependencies = []
+
+[project.scripts]
+stateflow = "stateflow.demo:main"
+stateflow-adapter = "stateflow.adapters.process:main"
 
 [tool.setuptools.packages.find]
 include = ["stateflow*"]

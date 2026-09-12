@@ -29,6 +29,8 @@ authority、timestamp、TTL、confidence 和 `source_ref`。
 | `stateflow/adapters/profiles.py` | Runtime Prometheus 与 Mooncake/LMCache JSON 声明式 profile |
 | `stateflow/adapters/kubernetes_watch.py` | Node/Pod 双游标 list-watch、bookmark 与 410 relist |
 | `stateflow/adapters/runner.py` | 请求热路径之外的失败隔离 polling 与退避 |
+| `stateflow/adapters/process.py` | 独立 source 进程入口、配置校验与安全停止 |
+| `stateflow/state/http_client.py` | Semantic Adapter 使用的 HTTP Southbound writer |
 
 ## Architecture
 
@@ -90,6 +92,8 @@ view = bridge.materialize_request("request-a")
   Mooncake 和 LMCache profile；KV tensor 和 prompt 内容不会进入 StateFlow。
 - `PollingAdapterRunner` 捕获 source 异常并执行有上限的指数退避；异常不进入
   Gateway 请求路径。
+- `stateflow-adapter` 将一个 source、一个 semantic Adapter 和
+  `StatePlaneHTTPClient` 组合为独立进程；支持单次探测与持续退避轮询。
 
 参考来源：
 
@@ -141,5 +145,6 @@ materialize(request_id)
 - [x] 全量单元测试通过。
 - [x] vLLM/SGLang/Ray Serve/DCGM Prometheus profile、Kubernetes list-watch/410
   recovery、Mooncake/LMCache metadata profile 与 fixture 测试。
+- [x] 独立 Adapter 进程与 State Plane HTTP writer 集成测试。
 - [ ] 在目标版本与集群中校验 metric/JSON profile，并完成真实数据源联调。
-- [ ] 独立 Adapter 进程、gRPC transport、持久 watermark 与 backpressure。
+- [ ] gRPC transport、持久 watermark 与 backpressure。

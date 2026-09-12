@@ -2,6 +2,10 @@
 
 当前参考实现使用标准库 HTTP Server，统一前缀为 `/v1/state-plane`。接口是内存实现的稳定语义边界，不代表生产部署必须使用 HTTP。
 
+`StatePlaneHTTPClient` 实现 Semantic Adapter 所需的 writer/query 子集，供
+`stateflow-adapter` 独立进程调用；它保留 source authority、TTL、CAS、
+idempotency 和 write rejection，不把失败静默转换为成功。
+
 ## Southbound
 
 | Method | Path | 对应 Contract |

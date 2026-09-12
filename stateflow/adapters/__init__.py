@@ -1,6 +1,12 @@
 """Semantic adapters that project existing components into State Plane."""
 
-from .base import AdapterPublishReport, StatePlaneAdapter, component_ref, entity_ref
+from .base import (
+    AdapterPublishReport,
+    AdapterStatePlane,
+    StatePlaneAdapter,
+    component_ref,
+    entity_ref,
+)
 from .bridge import MaterializedRequestView, ObservabilityBridge
 from .clients import (
     CollectionReport,
@@ -46,6 +52,7 @@ from .source import (
 
 __all__ = [
     "AdapterPublishReport",
+    "AdapterStatePlane",
     "CorrelationResolver",
     "CollectionReport",
     "DCGMStateAdapter",

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Iterable
+from typing import Iterable, Protocol
 from urllib.parse import quote
 
 from ..state import (
@@ -12,8 +12,9 @@ from ..state import (
     GraphEntity,
     GraphKind,
     Heartbeat,
-    InMemoryStatePlane,
+    RelationUpdate,
     SourceRef,
+    StateUpdate,
     WriteResult,
 )
 from ..state.schema import utcnow
@@ -62,12 +63,30 @@ class AdapterPublishReport:
         return self.state_results + self.relation_results
 
 
+class AdapterStatePlane(Protocol):
+    """Writer/query subset required by semantic adapters."""
+
+    def list_components(self) -> tuple[ComponentDescriptor, ...]: ...
+
+    def register_component(self, descriptor: ComponentDescriptor) -> None: ...
+
+    def upsert_entity(self, entity: GraphEntity) -> None: ...
+
+    def get_entity(self, entity_ref: str) -> GraphEntity | None: ...
+
+    def publish_state(self, updates: Iterable[StateUpdate]) -> list[WriteResult]: ...
+
+    def upsert_relations(self, updates: Iterable[RelationUpdate]) -> list[WriteResult]: ...
+
+    def heartbeat(self, heartbeat: Heartbeat) -> None: ...
+
+
 class StatePlaneAdapter:
     """Common registration and heartbeat behavior for semantic adapters."""
 
     def __init__(
         self,
-        plane: InMemoryStatePlane,
+        plane: AdapterStatePlane,
         *,
         component_id: str,
         kind: str,
@@ -131,6 +150,7 @@ class StatePlaneAdapter:
 
 __all__ = [
     "AdapterPublishReport",
+    "AdapterStatePlane",
     "StatePlaneAdapter",
     "component_ref",
     "entity_ref",

@@ -33,6 +33,8 @@ The implementation includes:
 - dependency-free vLLM/SGLang/Ray Serve/DCGM Prometheus, Kubernetes list-watch,
   and profiled Mooncake/LMCache metadata HTTP source clients with
   failure-isolated polling runners;
+- a standard-library State Plane HTTP writer and installable
+  `stateflow-adapter` process entry point, keeping collection off the request path;
 - an in-memory backend and a small `urllib` OpenAI-compatible backend;
 - a standard-library HTTP server for local integration tests.
 
@@ -60,6 +62,15 @@ The canonical v1.1 State Plane API is available under `/v1/state-plane/*`.
 For example, `/v1/state-plane/schema`, `/v1/state-plane/freshness`, and
 `POST /v1/state-plane/snapshots`. See
 [`docs/STATE_PLANE_API_V1_1.md`](docs/STATE_PLANE_API_V1_1.md).
+
+An installed package can run an observability source independently:
+
+```bash
+stateflow-adapter --source vllm \
+  --source-endpoint http://runtime-a:8000 \
+  --state-plane-url http://stateflow:8080 \
+  --runtime-id runtime-a --instance-id replica-a
+```
 
 ## Integration boundary
 

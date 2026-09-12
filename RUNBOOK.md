@@ -16,7 +16,28 @@ ordering, KV-aware cost, latency/placement, critical override, hysteresis,
 state event application, reporter isolation, protocol normalization, gateway
 routing, Runtime/KV/Kubernetes/DCGM semantic projection, cross-source identity
 resolution, source-client parsing, polling failure isolation, request-scoped
-graph materialization, and HTTP smoke behavior.
+graph materialization, independent adapter HTTP publication, and HTTP smoke
+behavior.
+
+## Run an adapter process
+
+After installing the package, run one source per process. The process only
+publishes metadata and semantic state; model requests do not pass through it.
+
+```bash
+stateflow-adapter --source vllm \
+  --source-endpoint http://runtime-a:8000 \
+  --state-plane-url http://stateflow:8080 \
+  --runtime-id runtime-a \
+  --instance-id replica-a \
+  --node-id node-a
+```
+
+Supported `--source` values are `vllm`, `sglang`, `ray-serve`, `dcgm`,
+`kubernetes`, `mooncake`, and `lmcache`. Ray's shared Prometheus endpoint can
+be scoped with repeated `--metric-label KEY=VALUE`. Kubernetes credentials are
+read from `--bearer-token-file` or `STATEFLOW_KUBERNETES_BEARER_TOKEN`, never
+printed. Use `--once` for probes and fixture validation.
 
 ## Start the demo
 
@@ -47,10 +68,9 @@ measurement.
 
 - Replace `InMemoryStateStore` and `InMemoryStatePlane` with a durable event
   journal, hot state/relation indexes, and distributed snapshot materializer.
-- Add SGLang/Ray and native Mooncake/LMCache profiles, Kubernetes list-watch
-  recovery, process packaging, and gRPC bindings for the contracts defined in
-  `proto/stateflow.proto`. The current clients cover vLLM/DCGM Prometheus,
-  Kubernetes list polling, and a metadata-only KV sidecar JSON contract.
+- Add gRPC bindings for the contracts defined in `proto/stateflow.proto` and
+  validate every built-in source profile against pinned target versions. The
+  current independent adapter process uses the stable HTTP Southbound API.
 - Replace `HeuristicSuccessPredictor` with a calibrated predictor and keep
   uncertainty conservative; unknown state must remain safe.
 - Register tokenizer/context accounting before enabling hard context-window

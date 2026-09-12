@@ -40,6 +40,7 @@ from .contracts import (
 from .plane import InMemoryStatePlane
 from .registry import CanonicalKeyRegistry, UnknownCanonicalKey, default_key_registry
 from .api import StatePlaneAPI, StatePlaneAPIResponse
+from .http_client import StatePlaneHTTPClient, StatePlaneHTTPError
 
 __all__ = [
     "AgentPhase",
@@ -70,6 +71,8 @@ __all__ = [
     "StateField",
     "StatePlaneAPI",
     "StatePlaneAPIResponse",
+    "StatePlaneHTTPClient",
+    "StatePlaneHTTPError",
     "StateSemantic",
     "StateEvent",
     "StateUpdate",
