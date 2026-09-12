@@ -14,7 +14,8 @@ snapshot freshness and immutability, graph relation constraints, change
 cursors, Candidate-Action control records, hard filters, success-first
 ordering, KV-aware cost, latency/placement, critical override, hysteresis,
 state event application, reporter isolation, protocol normalization, gateway
-routing, and HTTP smoke behavior.
+routing, Runtime/KV/Kubernetes/DCGM semantic projection, cross-source identity
+resolution, request-scoped graph materialization, and HTTP smoke behavior.
 
 ## Start the demo
 
@@ -45,8 +46,9 @@ measurement.
 
 - Replace `InMemoryStateStore` and `InMemoryStatePlane` with a durable event
   journal, hot state/relation indexes, and distributed snapshot materializer.
-- Add independent Runtime/KV/K8s/DCGM adapters and gRPC bindings for the
-  contracts defined in `proto/stateflow.proto`.
+- Connect the Runtime/KV/K8s/DCGM semantic adapters to source-specific clients,
+  run them as independent processes, and add gRPC bindings for the contracts
+  defined in `proto/stateflow.proto`.
 - Replace `HeuristicSuccessPredictor` with a calibrated predictor and keep
   uncertainty conservative; unknown state must remain safe.
 - Register tokenizer/context accounting before enabling hard context-window

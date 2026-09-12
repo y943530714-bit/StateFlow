@@ -12,8 +12,8 @@
 | --- | --- | --- | --- |
 | Canonical Key / Schema Registry | 无；字段绑定 AgentState | 已实现首批 key、alias、TTL、单位、语义 | schema negotiation、deprecation、持久化 |
 | Source Authority / Provenance | 仅 `authoritative: bool` | 已实现 A0-A4、source_ref、confidence、冲突拒绝 | 多源合并策略、adapter health |
-| Component State Graph | 无通用图 | 已实现实体与受控关系索引 | Harness/Runtime/KV adapter 自动物化 |
-| Deployment State Graph | Candidate 中有扁平位置字段 | 已实现 Cluster/Node/Instance/Resource/Link 实体模型 | K8s/Ray/DCGM watcher |
+| Component State Graph | 无通用图 | 已实现实体与受控关系索引；Runtime/KV 语义 Adapter 可自动物化 | 对接真实 Runtime/KV client |
+| Deployment State Graph | Candidate 中有扁平位置字段 | 已实现 Cluster/Node/Instance/Resource/Link；K8s/DCGM 语义 Adapter 可物化 | 对接 K8s/Ray/DCGM watcher |
 | Cross-graph Relation | 无 | 已限制为 deployed_on/executing_on/located_on | 一致性校验与生命周期回收 |
 | Snapshot / Query | AgentState 深拷贝 | 已实现不可变 token、freshness、completeness、显式 missing/stale | 批量 RPC、分布式 logical time |
 | Subscribe | AgentState callback | 已实现可恢复 cursor change feed 与 callback | backpressure、coalesce、持久游标 |
@@ -51,6 +51,9 @@
 - [x] HTTP Northbound API：GetState/GetSnapshot/QueryGraph/Change Cursor/QueryMetrics/GetFreshness/ListSchema。
 - [x] Gateway Adapter：自动投影 Request、候选 Runtime/Instance 和实际 executing_on 关系。
 - [ ] gRPC API 与独立 Adapter 进程。
+- [x] Runtime/KV/Kubernetes/DCGM 协议无关语义 Adapter 与共享 Correlation Resolver。
+- [x] `Request↔Runtime↔Instance↔Node↔KV↔Resource` 请求级关系物化。
+- [ ] 对接真实 vLLM/SGLang、Mooncake/LMCache、K8s/Ray、DCGM/NVML/NIC client。
 - [ ] WatchState 长连接的 backpressure/coalesce；当前为可恢复 HTTP cursor polling。
 - [ ] 持久 Hot Store、Relation Index 和 adapter watermark。
 
@@ -114,7 +117,7 @@
 | --- | --- | --- |
 | M1（本轮） | v1.1 contracts、in-memory State Plane、routing bridge、测试、文档 | 全量回归通过；旧 API 兼容 |
 | M2（当前） | HTTP Southbound/Northbound API；Gateway Request/Runtime adapter | 功能与集成测试已通过；已有进程内 Snapshot 延迟基线；待补 gRPC 与独立 adapter |
-| M3 | KV/K8s/DCGM adapter；完整两图物化 | Request↔Instance↔Node↔KV 可重建 |
+| M3（进行中） | Runtime/KV/K8s/DCGM 语义 Adapter 与完整两图物化已完成；待接 source-specific client | Request↔Instance↔Node↔KV 可重建；真实数据源联调通过 |
 | M4 | Analytical Prediction service + shadow journal/replay | 预测误差与 coverage 可观测 |
 | M5 | Agent-aware KV dry-run → controlled closed-loop | 安全指标达标且相对 baseline 有增量 |
 | M6 | Cross-layer Routing shadow → controlled closed-loop | SLO/成本/KV/OOM 指标达标且可回退 |

@@ -1,6 +1,15 @@
 """StateFlow: success-first request scheduling for stateful agents."""
 
 from .gateway import GatewayResponse, RequestGateway, TargetRegistry, normalize_request
+from .adapters import (
+    CorrelationResolver,
+    DeploymentObservation,
+    HardwareObservation,
+    KVLocation,
+    KVObservation,
+    ObservabilityBridge,
+    RuntimeObservation,
+)
 from .scheduler import (
     NoFeasibleTarget,
     RoutingControlBundle,
@@ -29,16 +38,23 @@ __all__ = [
     "AgentPhase",
     "AgentState",
     "CanonicalKeyRegistry",
+    "CorrelationResolver",
+    "DeploymentObservation",
     "GatewayResponse",
     "GraphEntity",
     "GraphKind",
     "HarnessSchedulingView",
+    "HardwareObservation",
     "InMemoryStatePlane",
+    "KVLocation",
+    "KVObservation",
     "NoFeasibleTarget",
+    "ObservabilityBridge",
     "RequestGateway",
     "RelationUpdate",
     "RoutingDecision",
     "RoutingControlBundle",
+    "RuntimeObservation",
     "SchedulerConfig",
     "SnapshotRequest",
     "SourceAuthority",

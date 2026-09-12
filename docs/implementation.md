@@ -14,6 +14,9 @@ implemented as an incrementally compatible Python reference stack.
 | Existing scheduler → v1.1 replay record bridge | `stateflow/scheduler/contract_bridge.py` |
 | Southbound/Northbound HTTP facade | `stateflow/state/api.py`, `stateflow/gateway/server/http.py` |
 | Gateway Request/Runtime/Instance projection | `stateflow/adapters/gateway.py` |
+| Stable ID and cross-source correlation | `stateflow/adapters/identity.py` |
+| Runtime/KV/Kubernetes/DCGM semantic adapters | `stateflow/adapters/runtime.py`, `kv.py`, `kubernetes.py`, `dcgm.py` |
+| Request-scoped two-graph materialization | `stateflow/adapters/bridge.py` |
 | Agent State header and full schema | `stateflow/state/schema.py` |
 | Event + snapshot + hot view | `stateflow/state/event.py`, `stateflow/state/store/in_memory.py`, `stateflow/state/scheduling_view/` |
 | Success LCB and success gate | `success_predictor.py`, `success_gate.py` |
@@ -50,3 +53,9 @@ The canonical HTTP surface is documented in
 [`STATE_PLANE_API_V1_1.md`](STATE_PLANE_API_V1_1.md). The existing
 `/v1/state/events` endpoint remains available for legacy AgentState events;
 new canonical operations use `/v1/state-plane/*`.
+
+The M3 observability bridge is transport-neutral. Source-specific collectors
+convert owner APIs, watches, or metric windows into the observation records in
+`stateflow.adapters`; the adapters then normalize IDs, keys, authority,
+freshness, provenance, and relations before writing to the State Plane. See
+[`OBSERVABILITY_BRIDGE_V1_1.md`](OBSERVABILITY_BRIDGE_V1_1.md).

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from urllib.parse import quote
-
 from ..gateway.normalizer.request import ProviderNeutralRequest
 from ..scheduler.types import RoutingDecision
 from ..state import (
@@ -18,6 +16,7 @@ from ..state import (
     StateUpdate,
 )
 from ..state.schema import TargetCandidate
+from .identity import CorrelationResolver
 
 
 class GatewayStateProjector:
@@ -25,14 +24,19 @@ class GatewayStateProjector:
 
     producer = "stateflow-gateway-adapter"
 
-    def __init__(self, plane: InMemoryStatePlane) -> None:
+    def __init__(
+        self,
+        plane: InMemoryStatePlane,
+        resolver: CorrelationResolver | None = None,
+    ) -> None:
         self.plane = plane
+        self.resolver = resolver or CorrelationResolver()
         self.plane.register_component(
             ComponentDescriptor(
                 component_id="stateflow-gateway",
                 kind="request_scheduler",
                 implementation="stateflow",
-                version="0.2",
+                version="0.3",
                 schema_versions=("1.1",),
                 produces_state=(
                     "request.context_tokens",
@@ -61,6 +65,12 @@ class GatewayStateProjector:
     ) -> None:
         request_ref = self.request_ref(request.request_id)
         correlation = self._correlation(request)
+        self.resolver.bind(
+            request_ref,
+            request_id=request.request_id,
+            session_id=request.session_id,
+            trace_id=request.trace_id,
+        )
         self.plane.upsert_entity(
             GraphEntity(
                 request_ref,
@@ -99,6 +109,8 @@ class GatewayStateProjector:
     def record_target(self, target: TargetCandidate) -> None:
         component_ref = self.runtime_ref(target.endpoint_id)
         instance_ref = self.instance_ref(target.replica_id)
+        self.resolver.bind(component_ref, component_id=target.endpoint_id)
+        self.resolver.bind(instance_ref, instance_id=target.replica_id)
         self.plane.register_component(
             ComponentDescriptor(
                 component_id=target.endpoint_id,
@@ -217,6 +229,7 @@ class GatewayStateProjector:
         runtime_ref = self.runtime_ref(selected.endpoint_id)
         instance_ref = self.instance_ref(selected.replica_id)
         correlation = self._correlation(request, decision.decision_id)
+        self.resolver.bind(request_ref, action_id=decision.decision_id)
         self.plane.publish_state(
             (
                 StateUpdate(
@@ -253,19 +266,19 @@ class GatewayStateProjector:
 
     @staticmethod
     def request_ref(request_id: str) -> str:
-        return f"component/request/{_id(request_id)}"
+        return CorrelationResolver.request_ref(request_id)
 
     @staticmethod
     def runtime_ref(endpoint_id: str) -> str:
-        return f"component/component/{_id(endpoint_id)}"
+        return CorrelationResolver.runtime_ref(endpoint_id)
 
     @staticmethod
     def instance_ref(replica_id: str) -> str:
-        return f"deployment/instance/{_id(replica_id)}"
+        return CorrelationResolver.instance_ref(replica_id)
 
     @staticmethod
     def node_ref(node_id: str) -> str:
-        return f"deployment/node/{_id(node_id)}"
+        return CorrelationResolver.node_ref(node_id)
 
     @staticmethod
     def _correlation(request: ProviderNeutralRequest, action_id: str = "") -> CorrelationIdentity:
@@ -276,10 +289,5 @@ class GatewayStateProjector:
             action_id=action_id,
             component_id="stateflow-gateway",
         )
-
-
-def _id(value: str) -> str:
-    return quote(value, safe="")
-
 
 __all__ = ["GatewayStateProjector"]

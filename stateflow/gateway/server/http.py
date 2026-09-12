@@ -35,7 +35,7 @@ class StateFlowHTTPServer:
         state_plane_api = StatePlaneAPI(gateway.state_plane)
 
         class Handler(BaseHTTPRequestHandler):
-            server_version = "StateFlow/0.2"
+            server_version = "StateFlow/0.3"
 
             def do_GET(self) -> None:  # noqa: N802
                 parsed = urlparse(self.path)
