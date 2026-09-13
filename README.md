@@ -42,6 +42,8 @@ The implementation includes:
   and snapshot/model-version replay;
 - an in-memory shadow Decision/Prediction/Outcome journal with MAE/MAPE,
   coverage, Brier score, and binned calibration reporting;
+- side-effect-free interactive/critical/batch lexicographic policy replay with
+  hard constraints and baseline-relative predicted gain;
 - an in-memory backend and a small `urllib` OpenAI-compatible backend;
 - a standard-library HTTP server for local integration tests.
 

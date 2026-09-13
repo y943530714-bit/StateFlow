@@ -34,9 +34,7 @@ writes are rejected instead of replacing the original shadow evidence.
 - success Brier score and binned expected calibration error (ECE);
 - fallback rate and non-empty calibration-bin details.
 
-Reports can be filtered by `model_version`. This implementation is an
-in-memory MVP; durable journal storage, retention, tenant isolation, and
-offline controlled-policy replay remain production work.
+Reports can be filtered by `model_version`.
 
 ```python
 from stateflow.control import InMemoryControlJournal
@@ -46,3 +44,31 @@ journal.record_decision(decision, predictions)
 feedback = journal.record_outcome(outcome)
 report = journal.report(model_version="analytical-0.1")
 ```
+
+## Controlled policy replay
+
+`controlled_replay()` applies `PolicyIntent.interactive()`, `critical()`, or
+`batch()` objective order to the predictions from one historical decision.
+Hard confidence, success, latency, cost, model-version, and fallback
+constraints run before the lexicographic objective gates. Unknown primary
+objectives fail closed.
+
+The result is always `dry_run=True`. It identifies the historical baseline and
+replayed selection, records every rejection and objective gate, and reports
+predicted success delta, latency reduction, cost reduction, and throughput
+delta where both candidates contain the required prediction. It does not
+construct or dispatch an executable action.
+
+```python
+from stateflow.control import PolicyIntent, ReplayConstraints, controlled_replay
+
+record = journal.get(decision_id)
+replay = controlled_replay(
+    record,
+    PolicyIntent.critical(),
+    constraints=ReplayConstraints(min_success_probability=0.9),
+)
+```
+
+Durable journal storage, retention, tenant isolation, and production traffic
+capture remain production work.

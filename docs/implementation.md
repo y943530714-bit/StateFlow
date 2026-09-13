@@ -13,6 +13,7 @@ implemented as an incrementally compatible Python reference stack.
 | Shadow analytical prediction model/service + replay journal | `stateflow/prediction/model.py`, `service.py` |
 | Policy/Decision/Action/Outcome/Feedback contracts | `stateflow/control/` |
 | Shadow control join and prediction evaluation | `stateflow/control/journal.py`, `evaluation.py` |
+| Side-effect-free lexicographic policy replay | `stateflow/control/replay.py` |
 | Existing scheduler → v1.1 replay record bridge | `stateflow/scheduler/contract_bridge.py` |
 | Southbound/Northbound HTTP facade | `stateflow/state/api.py`, `stateflow/gateway/server/http.py` |
 | Gateway Request/Runtime/Instance projection | `stateflow/adapters/gateway.py` |

@@ -17,6 +17,13 @@ from .evaluation import (
     materialize_evaluation_report,
 )
 from .journal import InMemoryControlJournal, JoinedControlRecord
+from .replay import (
+    NoReplayCandidate,
+    ReplayConstraints,
+    ReplayDecision,
+    ReplayPolicyConfig,
+    controlled_replay,
+)
 
 __all__ = [
     "Action",
@@ -26,11 +33,16 @@ __all__ = [
     "Feedback",
     "InMemoryControlJournal",
     "JoinedControlRecord",
+    "NoReplayCandidate",
     "Objective",
     "Outcome",
     "PolicyIntent",
     "PredictionEvaluationReport",
+    "ReplayConstraints",
+    "ReplayDecision",
+    "ReplayPolicyConfig",
     "Reservation",
     "build_feedback",
+    "controlled_replay",
     "materialize_evaluation_report",
 ]

@@ -90,8 +90,8 @@
 - [x] PolicyIntent、Decision、Action、Outcome、Feedback 数据契约。
 - [x] RoutingDecision → candidate predictions + DecisionRecord 转换。
 - [x] In-memory Decision/Prediction/Outcome journal 与 action_id join。
-- [ ] interactive/critical/batch 可配置 lexicographic policy。
-- [ ] baseline 与候选策略 controlled replay。
+- [x] interactive/critical/batch 可配置 lexicographic replay policy。
+- [x] baseline 与候选策略 side-effect-free controlled replay。
 - [x] KPI、prediction error 和 calibration sample materializer。
 
 验收：生产请求无副作用；每个 decision 能重放候选、约束、预测和选择原因；可量化相对 baseline 的 potential gain。
