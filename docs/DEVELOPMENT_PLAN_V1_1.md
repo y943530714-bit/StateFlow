@@ -78,7 +78,8 @@
 - [x] HBM pressure：used + reserved + predicted KV growth。
 - [x] Deterministic cost accounting。
 - [x] applicability、feature freshness、model version 和 fallback 输出。
-- [ ] Prediction journal/replay 与 calibration error 存储。
+- [x] In-memory Prediction journal，以及按 snapshot/model version replay。
+- [ ] calibration error 存储与聚合报表。
 
 验收：shadow 预测生成 MAE/MAPE/calibration/coverage 报表；低置信度自动退回当前 heuristic；所有预测可按 snapshot/model version 重放。
 

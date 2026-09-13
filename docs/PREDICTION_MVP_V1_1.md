@@ -54,6 +54,15 @@ existing `success-first-heuristic` fallback. This keeps the analytical model
 off the request hot path until journal, replay, and calibration acceptance
 criteria are met.
 
+## Journal and replay
+
+Every service prediction is appended to a thread-safe shadow journal together
+with a deep copy of its request and immutable snapshot. Records can be filtered
+by `snapshot_id` and `model_version`. `replay(prediction_id)` uses the recorded
+snapshot rather than current State Plane values, so eviction or later writes do
+not change the original replay. Additional model versions can be registered to
+compare the same recorded input with a newer model.
+
 ```python
 from stateflow.prediction import CandidateAction, PredictionRequest, PredictionService
 
@@ -74,5 +83,5 @@ prediction = service.predict(
 )
 ```
 
-The next increment adds a prediction/decision/outcome journal, deterministic
-replay by snapshot and model version, and aggregate error/calibration reports.
+The next increment joins selected predictions and decisions to outcomes and
+materializes aggregate MAE/MAPE, coverage, and calibration reports.

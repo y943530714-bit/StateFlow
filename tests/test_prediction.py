@@ -6,6 +6,7 @@ import unittest
 from stateflow.prediction import (
     AnalyticalPredictionModel,
     CandidateAction,
+    InMemoryPredictionJournal,
     PredictionRequest,
     PredictionService,
 )
@@ -84,6 +85,67 @@ class _SnapshotPlane:
 
 
 class AnalyticalPredictionTests(unittest.TestCase):
+    def test_journal_replay_retains_snapshot_request_and_model_version(self) -> None:
+        snapshot = _snapshot()
+        plane = _SnapshotPlane(snapshot)
+        journal = InMemoryPredictionJournal()
+        service = PredictionService(
+            plane,
+            journal=journal,
+            additional_models=(AnalyticalPredictionModel("analytical-0.2"),),
+        )
+        parameters = {
+            "cached_tokens": 500,
+            "transfer_setup_seconds": 0.1,
+            "predicted_kv_growth_bytes": 1_000_000_000,
+            "hbm_capacity_bytes": 10_000_000_000,
+        }
+        original = service.predict(
+            PredictionRequest(
+                snapshot.token,
+                CandidateAction(
+                    candidate_id="candidate-replay",
+                    action_type="route",
+                    target_component="component/component/runtime-a",
+                    parameters=parameters,
+                ),
+            )
+        )
+
+        parameters["cached_tokens"] = 0
+        plane.snapshot = Snapshot(
+            token=snapshot.token,
+            logical_time=99,
+            created_at=NOW,
+            completeness=0.0,
+            values=(),
+            relations=(),
+        )
+        replayed = service.replay(original.prediction_id)
+        alternate = service.replay(
+            original.prediction_id,
+            model_version="analytical-0.2",
+        )
+        records = service.records(
+            snapshot_id=snapshot.token,
+            model_version="analytical-0.1",
+        )
+
+        self.assertEqual(replayed.to_dict(), original.to_dict())
+        self.assertEqual(alternate.model_version, "analytical-0.2")
+        self.assertNotEqual(alternate.prediction_id, original.prediction_id)
+        self.assertEqual(len(records), 1)
+        self.assertEqual(
+            records[0].replay_pointer,
+            f"prediction:{original.prediction_id}",
+        )
+        self.assertEqual(
+            records[0].request.candidate_action.parameters["cached_tokens"],
+            500,
+        )
+        with self.assertRaisesRegex(KeyError, "model version is unavailable"):
+            service.replay(original.prediction_id, model_version="missing")
+
     def test_service_reads_an_immutable_state_plane_snapshot(self) -> None:
         plane = InMemoryStatePlane()
         request_ref = "component/request/prediction-r1"
