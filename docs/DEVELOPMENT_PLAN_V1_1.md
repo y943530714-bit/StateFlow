@@ -79,7 +79,7 @@
 - [x] Deterministic cost accounting。
 - [x] applicability、feature freshness、model version 和 fallback 输出。
 - [x] In-memory Prediction journal，以及按 snapshot/model version replay。
-- [ ] calibration error 存储与聚合报表。
+- [x] calibration sample、MAE/MAPE/coverage/Brier/ECE 聚合报表。
 
 验收：shadow 预测生成 MAE/MAPE/calibration/coverage 报表；低置信度自动退回当前 heuristic；所有预测可按 snapshot/model version 重放。
 
@@ -89,10 +89,10 @@
 
 - [x] PolicyIntent、Decision、Action、Outcome、Feedback 数据契约。
 - [x] RoutingDecision → candidate predictions + DecisionRecord 转换。
-- [ ] Decision/Prediction/Outcome journal 与 action_id join。
+- [x] In-memory Decision/Prediction/Outcome journal 与 action_id join。
 - [ ] interactive/critical/batch 可配置 lexicographic policy。
 - [ ] baseline 与候选策略 controlled replay。
-- [ ] KPI、prediction error 和 calibration sample materializer。
+- [x] KPI、prediction error 和 calibration sample materializer。
 
 验收：生产请求无副作用；每个 decision 能重放候选、约束、预测和选择原因；可量化相对 baseline 的 potential gain。
 
@@ -128,7 +128,7 @@
 | M1（本轮） | v1.1 contracts、in-memory State Plane、routing bridge、测试、文档 | 全量回归通过；旧 API 兼容 |
 | M2（已完成） | HTTP/gRPC Southbound/Northbound API；Gateway Request/Runtime adapter；独立 Adapter writer | HTTP/gRPC 互操作测试通过；已有进程内 Snapshot 延迟基线 |
 | M3（进行中） | 语义 Adapter、完整两图物化、Runtime/DCGM/K8s/KV profile、list-watch 与进程化已完成；待目标环境联调 | Request↔Instance↔Node↔KV 可重建；真实数据源联调通过 |
-| M4 | Analytical Prediction service + shadow journal/replay | 预测误差与 coverage 可观测 |
+| M4（核心完成） | Analytical Prediction service + in-memory shadow journal/replay/evaluation | 预测误差、coverage 与 calibration 可观测；待持久化和生产流量接入 |
 | M5 | Agent-aware KV dry-run → controlled closed-loop | 安全指标达标且相对 baseline 有增量 |
 | M6 | Cross-layer Routing shadow → controlled closed-loop | SLO/成本/KV/OOM 指标达标且可回退 |
 

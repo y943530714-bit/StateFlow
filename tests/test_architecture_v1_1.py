@@ -3,7 +3,13 @@ from __future__ import annotations
 from datetime import timedelta
 import unittest
 
-from stateflow.control import Objective, PolicyIntent
+from stateflow.control import (
+    ActionStatus,
+    InMemoryControlJournal,
+    Objective,
+    Outcome,
+    PolicyIntent,
+)
 from stateflow.prediction import Prediction
 from stateflow.scheduler import routing_control_bundle
 from stateflow.scheduler.harness.success_first import SuccessFirstScheduler
@@ -209,11 +215,27 @@ class ArchitectureV11PredictionTests(unittest.TestCase):
         self.assertEqual(bundle.decision.snapshot_id, "agent-state:state-1:3")
         self.assertEqual(bundle.decision.policy_version, "critical-v2")
         self.assertEqual(bundle.decision.selected_action.action_type, "route")
+        self.assertIn("candidate_id", bundle.decision.selected_action.parameters)
         self.assertIsInstance(bundle.predictions[0], Prediction)
         self.assertAlmostEqual(
             bundle.predictions[0].reliability.success_probability or 0.0,
             routing.predicted_success,
         )
+        journal = InMemoryControlJournal()
+        journal.record_decision(bundle.decision, bundle.predictions)
+        completed_at = utcnow()
+        feedback = journal.record_outcome(
+            Outcome(
+                action_id=bundle.decision.selected_action.action_id,
+                status=ActionStatus.COMMITTED,
+                started_at=completed_at - timedelta(seconds=1),
+                completed_at=completed_at,
+                actual_latency_seconds=1.0,
+                actual_cost=0.1,
+                actual_success=True,
+            )
+        )
+        self.assertEqual(feedback.prediction_id, bundle.predictions[0].prediction_id)
 
     def test_policy_objective_order_is_configurable(self) -> None:
         self.assertEqual(PolicyIntent.interactive().objectives[0], Objective.LATENCY)

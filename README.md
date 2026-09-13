@@ -40,6 +40,8 @@ The implementation includes:
 - a shadow-only analytical Prediction service for deterministic transfer,
   routing latency, HBM pressure, and cost estimates, with explicit fallback
   and snapshot/model-version replay;
+- an in-memory shadow Decision/Prediction/Outcome journal with MAE/MAPE,
+  coverage, Brier score, and binned calibration reporting;
 - an in-memory backend and a small `urllib` OpenAI-compatible backend;
 - a standard-library HTTP server for local integration tests.
 

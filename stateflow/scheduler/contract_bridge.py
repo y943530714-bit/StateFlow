@@ -53,7 +53,10 @@ def routing_control_bundle(
             selected_action = Action(
                 target_component=evaluation.endpoint_id,
                 action_type="route",
-                parameters=dict(candidate.parameters),
+                parameters={
+                    **candidate.parameters,
+                    "candidate_id": candidate.candidate_id,
+                },
                 preconditions={"candidate_eligible": evaluation.eligible},
                 idempotency_key=f"route:{routing.decision_id}",
                 action_id=f"action:{routing.decision_id}",

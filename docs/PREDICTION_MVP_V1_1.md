@@ -83,5 +83,6 @@ prediction = service.predict(
 )
 ```
 
-The next increment joins selected predictions and decisions to outcomes and
-materializes aggregate MAE/MAPE, coverage, and calibration reports.
+Selected predictions and decisions can now be joined to outcomes through the
+shadow control journal. Aggregate MAE/MAPE, coverage, Brier score, and binned
+ECE are described in `SHADOW_EVALUATION_V1_1.md`.
