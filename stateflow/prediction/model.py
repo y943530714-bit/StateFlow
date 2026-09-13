@@ -50,6 +50,7 @@ class AnalyticalPredictionModel:
             "effective_bw_bytes_per_second",
             "link.effective_bw",
             required=transfer_bytes > 0,
+            positive=transfer_bytes > 0,
         )
         transfer_seconds = _rate_duration(
             transfer_bytes,
@@ -69,6 +70,7 @@ class AnalyticalPredictionModel:
             "prefill_tokens_per_second",
             "runtime.prefill_tps",
             required=prefill_tokens > 0,
+            positive=prefill_tokens > 0,
         )
         prefill_seconds = _rate_duration(prefill_tokens, prefill_tps)
 
@@ -81,6 +83,7 @@ class AnalyticalPredictionModel:
             "decode_tokens_per_second",
             "runtime.decode_tps",
             required=output_tokens > 0,
+            positive=output_tokens > 0,
         )
         decode_seconds = _rate_duration(output_tokens, decode_tps)
 
@@ -107,9 +110,15 @@ class AnalyticalPredictionModel:
         predicted_kv_growth = features.number(
             "predicted_kv_growth_bytes", default=0.0
         )
-        predicted_hbm = hbm_used + hbm_reserved + predicted_kv_growth
+        hbm_release = features.number("hbm_release_bytes", default=0.0)
+        predicted_hbm = max(
+            0.0,
+            hbm_used + hbm_reserved + predicted_kv_growth - hbm_release,
+        )
         hbm_capacity = features.number(
-            "hbm_capacity_bytes", required=predicted_hbm > 0
+            "hbm_capacity_bytes",
+            required=predicted_hbm > 0,
+            positive=predicted_hbm > 0,
         )
         hbm_pressure = (
             predicted_hbm / hbm_capacity
@@ -167,7 +176,11 @@ class AnalyticalPredictionModel:
 
         confidence = features.confidence()
         applicability = _applicability(candidate.action_type)
-        fallback = "none" if confidence >= 0.5 else "baseline"
+        fallback = (
+            "none"
+            if confidence >= 0.5 and features.required_features_complete
+            else "baseline"
+        )
         return Prediction(
             snapshot_id=snapshot.token,
             candidate_id=candidate.candidate_id,
@@ -224,6 +237,7 @@ class _FeatureResolver:
         *,
         default: float | None = None,
         required: bool = False,
+        positive: bool = False,
     ) -> float | None:
         value = self._resolve(parameter, canonical_key)
         if required:
@@ -237,6 +251,10 @@ class _FeatureResolver:
         number = float(value)
         if not math.isfinite(number) or number < 0:
             raise ValueError(f"prediction feature {parameter} must be finite and non-negative")
+        if positive and number == 0:
+            if required:
+                self.notes.append(f"invalid_feature:{canonical_key or parameter}")
+            return default
         if required:
             self.available += 1
         return number
@@ -252,6 +270,10 @@ class _FeatureResolver:
     def confidence(self) -> float:
         coverage = self.available / self.required if self.required else 0.0
         return clamp(self.snapshot.completeness * (0.35 + 0.65 * coverage))
+
+    @property
+    def required_features_complete(self) -> bool:
+        return self.available == self.required
 
     def _resolve(self, parameter: str, canonical_key: str) -> Any:
         if parameter in self.candidate.parameters:

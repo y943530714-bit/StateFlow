@@ -13,7 +13,7 @@ The first model is deterministic and reports its version as
 - prefill time = uncached prompt tokens / prefill throughput;
 - decode time = expected output tokens / decode throughput;
 - routing E2E = queue + transfer + prefill + decode;
-- predicted HBM bytes = used + reserved + predicted KV growth;
+- predicted HBM bytes = max(0, used + reserved + predicted KV growth - release);
 - GPU seconds = routing E2E × allocated GPU;
 - monetary cost = fixed + GPU + network + storage terms.
 
@@ -36,7 +36,8 @@ used for action-specific quantities and static target capabilities:
 | `target_kv_location` | `kv.location` |
 
 Other explicit parameters include `cached_tokens`, `transfer_setup_seconds`,
-`predicted_kv_growth_bytes`, `hbm_capacity_bytes`, `deadline_seconds`, and the
+`predicted_kv_growth_bytes`, `hbm_release_bytes`, `hbm_capacity_bytes`,
+`deadline_seconds`, and the
 `fixed_cost`, `gpu_second_cost`, `network_byte_cost`, and
 `storage_io_byte_cost` accounting rates.
 

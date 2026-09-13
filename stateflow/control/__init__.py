@@ -17,6 +17,16 @@ from .evaluation import (
     materialize_evaluation_report,
 )
 from .journal import InMemoryControlJournal, JoinedControlRecord
+from .kv import (
+    AgentAwareKVController,
+    KVActionOwner,
+    KVActionType,
+    KVControlPlan,
+    KVControlRequest,
+    KVControllerConfig,
+    KVTarget,
+    NoKVControlCandidate,
+)
 from .replay import (
     NoReplayCandidate,
     ReplayConstraints,
@@ -28,12 +38,20 @@ from .replay import (
 __all__ = [
     "Action",
     "ActionStatus",
+    "AgentAwareKVController",
     "CalibrationBin",
     "DecisionRecord",
     "Feedback",
     "InMemoryControlJournal",
     "JoinedControlRecord",
+    "KVActionOwner",
+    "KVActionType",
+    "KVControlPlan",
+    "KVControlRequest",
+    "KVControllerConfig",
+    "KVTarget",
     "NoReplayCandidate",
+    "NoKVControlCandidate",
     "Objective",
     "Outcome",
     "PolicyIntent",

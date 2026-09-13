@@ -14,6 +14,7 @@ implemented as an incrementally compatible Python reference stack.
 | Policy/Decision/Action/Outcome/Feedback contracts | `stateflow/control/` |
 | Shadow control join and prediction evaluation | `stateflow/control/journal.py`, `evaluation.py` |
 | Side-effect-free lexicographic policy replay | `stateflow/control/replay.py` |
+| Agent-aware KV dry-run candidate planning | `stateflow/control/kv.py` |
 | Existing scheduler → v1.1 replay record bridge | `stateflow/scheduler/contract_bridge.py` |
 | Southbound/Northbound HTTP facade | `stateflow/state/api.py`, `stateflow/gateway/server/http.py` |
 | Gateway Request/Runtime/Instance projection | `stateflow/adapters/gateway.py` |
@@ -66,3 +67,8 @@ convert owner APIs, watches, or metric windows into the observation records in
 `stateflow.adapters`; the adapters then normalize IDs, keys, authority,
 freshness, provenance, and relations before writing to the State Plane. See
 [`OBSERVABILITY_BRIDGE_V1_1.md`](OBSERVABILITY_BRIDGE_V1_1.md).
+
+M5 starts with the side-effect-free Agent-aware KV planner documented in
+[`KV_CONTROL_DRY_RUN_V1_1.md`](KV_CONTROL_DRY_RUN_V1_1.md). It keeps state
+ownership separate from action ownership and emits preconditions, proposed
+reservations, timeout, and rollback metadata without dispatching an action.

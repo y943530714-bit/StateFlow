@@ -225,6 +225,47 @@ class AnalyticalPredictionTests(unittest.TestCase):
         self.assertEqual(prediction.confidence, 1.0)
         self.assertEqual(prediction.fallback, "none")
 
+    def test_hbm_release_reduces_predicted_pressure(self) -> None:
+        prediction = AnalyticalPredictionModel().predict(
+            _snapshot(),
+            CandidateAction(
+                candidate_id="candidate-offload",
+                action_type="offload",
+                target_component="component/component/runtime-a",
+                parameters={
+                    "hbm_release_bytes": 2_000_000_000,
+                    "hbm_capacity_bytes": 10_000_000_000,
+                },
+            ),
+        )
+
+        self.assertAlmostEqual(prediction.future_state.hbm_pressure or 0, 0.7)
+        self.assertEqual(
+            prediction.future_state.values["predicted_hbm_bytes"],
+            7_000_000_000,
+        )
+
+    def test_zero_required_rate_is_an_explicit_fallback(self) -> None:
+        prediction = AnalyticalPredictionModel().predict(
+            _snapshot(),
+            CandidateAction(
+                candidate_id="candidate-zero-bandwidth",
+                action_type="offload",
+                target_component="component/component/runtime-a",
+                parameters={
+                    "transfer_bytes": 1000,
+                    "effective_bw_bytes_per_second": 0,
+                },
+            ),
+        )
+
+        self.assertIsNone(prediction.performance.transfer_eta_seconds)
+        self.assertEqual(prediction.fallback, "baseline")
+        self.assertIn(
+            "invalid_feature:link.effective_bw",
+            prediction.notes,
+        )
+
     def test_missing_critical_rate_propagates_unknown_and_fallback(self) -> None:
         snapshot = Snapshot(
             token="snapshot-missing-bandwidth",

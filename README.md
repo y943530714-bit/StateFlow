@@ -44,6 +44,9 @@ The implementation includes:
   coverage, Brier score, and binned calibration reporting;
 - side-effect-free interactive/critical/batch lexicographic policy replay with
   hard constraints and baseline-relative predicted gain;
+- an Agent-aware KV dry-run controller with owner-scoped keep/offload/prefetch/
+  migrate candidates, transfer/HBM guards, proposed reservations, and rollback
+  preconditions;
 - an in-memory backend and a small `urllib` OpenAI-compatible backend;
 - a standard-library HTTP server for local integration tests.
 
@@ -109,3 +112,5 @@ See [`RUNBOOK.md`](RUNBOOK.md), [`docs/implementation.md`](docs/implementation.m
 [`docs/DEVELOPMENT_PLAN_V1_1.md`](docs/DEVELOPMENT_PLAN_V1_1.md), and
 [`docs/OBSERVABILITY_BRIDGE_V1_1.md`](docs/OBSERVABILITY_BRIDGE_V1_1.md) for the
 validation flow, design-to-code mapping, phased roadmap, and M3 adapter contract.
+The M5 dry-run control boundary is documented in
+[`docs/KV_CONTROL_DRY_RUN_V1_1.md`](docs/KV_CONTROL_DRY_RUN_V1_1.md).

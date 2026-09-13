@@ -20,7 +20,7 @@
 | Candidate-Action Prediction | 分散在 Scheduler 内 | 已实现通用四维契约、路由转换桥和 shadow analytical service | journal/replay、校准 |
 | Decision / Action / Feedback | RoutingDecision 与状态历史 | 已实现通用记录契约 | Action Adapter、Outcome join、Feedback ledger |
 | Reservation / Commit | 无 | 已定义 Reservation 契约 | 原子 reserve/commit/release 与冲突指标 |
-| Agent-aware KV | 仅路由成本中的 KV value | 未闭环 | KV candidate、transfer model、Mooncake/LMCache adapter |
+| Agent-aware KV | 仅路由成本中的 KV value | 已实现 owner-aware dry-run candidate/prediction/decision | Action Adapter、原子 reservation/commit、Outcome 闭环 |
 | Cross-layer Routing | Agent + TargetCandidate 扁平输入 | 已有 Success-First baseline；可导出 v1.1 bundle | 改为同一 State Snapshot、可配置 PolicyIntent |
 
 ## 2. 分阶段路线
@@ -101,8 +101,10 @@
 先分开上线两个 Controller，避免一次耦合多个控制域。
 
 1. Agent-aware KV
-   - 状态：agent phase/expected next use、KV location/size、HBM pressure、effective BW。
-   - 动作：keep/offload/prefetch/migrate；由 Mooncake/LMCache owner 执行。
+   - [x] 状态：agent phase/expected next use、KV location/size、HBM pressure、effective BW。
+   - [x] dry-run 动作：keep/offload/prefetch/migrate candidate、预测、选择和 journal。
+   - [x] owner scope、state-owner/location/transfer precondition、HBM guard、proposed reservation、timeout/rollback。
+   - [ ] controlled action：Mooncake/LMCache owner Action Adapter、原子 reserve/commit/release、stale reject、cooldown/kill switch。
    - KPI：HBM reclaimed、resume latency、KV reuse、program E2E、transfer bytes。
 
 2. Cross-layer Routing
@@ -129,7 +131,7 @@
 | M2（已完成） | HTTP/gRPC Southbound/Northbound API；Gateway Request/Runtime adapter；独立 Adapter writer | HTTP/gRPC 互操作测试通过；已有进程内 Snapshot 延迟基线 |
 | M3（进行中） | 语义 Adapter、完整两图物化、Runtime/DCGM/K8s/KV profile、list-watch 与进程化已完成；待目标环境联调 | Request↔Instance↔Node↔KV 可重建；真实数据源联调通过 |
 | M4（核心完成） | Analytical Prediction service + in-memory shadow journal/replay/evaluation | 预测误差、coverage 与 calibration 可观测；待持久化和生产流量接入 |
-| M5 | Agent-aware KV dry-run → controlled closed-loop | 安全指标达标且相对 baseline 有增量 |
+| M5（进行中） | Agent-aware KV dry-run 已完成；下一步 controlled closed-loop | 安全指标达标且相对 baseline 有增量 |
 | M6 | Cross-layer Routing shadow → controlled closed-loop | SLO/成本/KV/OOM 指标达标且可回退 |
 
 当前本地基准（非生产 SLO）：7 个实体、10 个 StateValue、4 条关系的内存快照，每轮 2000 次、连续 3 轮得到 p50 0.90–0.92 ms、p95 1.27–1.50 ms、p99 1.77–3.05 ms。使用 `python -m benchmarks.state_plane_snapshot` 可复测；分布式存储和 RPC 延迟需在后续环境单独测量。
