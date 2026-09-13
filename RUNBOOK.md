@@ -39,6 +39,28 @@ be scoped with repeated `--metric-label KEY=VALUE`. Kubernetes credentials are
 read from `--bearer-token-file` or `STATEFLOW_KUBERNETES_BEARER_TOKEN`, never
 printed. Use `--once` for probes and fixture validation.
 
+### Optional gRPC transport
+
+```bash
+pip install '.[grpc]'
+stateflow --host 127.0.0.1 --port 8080 --grpc-port 50051
+
+stateflow-adapter --source vllm \
+  --source-endpoint http://runtime-a:8000 \
+  --state-plane-transport grpc \
+  --state-plane-url 127.0.0.1:50051 \
+  --runtime-id runtime-a \
+  --instance-id replica-a
+```
+
+Regenerate checked-in bindings after editing `proto/stateflow.proto`:
+
+```bash
+pip install '.[grpc-dev]'
+python scripts/generate_grpc.py
+python scripts/generate_grpc.py --check
+```
+
 ## Start the demo
 
 ```bash
@@ -68,9 +90,8 @@ measurement.
 
 - Replace `InMemoryStateStore` and `InMemoryStatePlane` with a durable event
   journal, hot state/relation indexes, and distributed snapshot materializer.
-- Add gRPC bindings for the contracts defined in `proto/stateflow.proto` and
-  validate every built-in source profile against pinned target versions. The
-  current independent adapter process uses the stable HTTP Southbound API.
+- Validate every built-in source profile against pinned target versions, then
+  add authentication/TLS and persistent watch cursors before production use.
 - Replace `HeuristicSuccessPredictor` with a calibrated predictor and keep
   uncertainty conservative; unknown state must remain safe.
 - Register tokenizer/context accounting before enabling hard context-window

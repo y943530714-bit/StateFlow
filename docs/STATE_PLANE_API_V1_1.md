@@ -6,6 +6,29 @@
 `stateflow-adapter` 独立进程调用；它保留 source authority、TTL、CAS、
 idempotency 和 write rejection，不把失败静默转换为成功。
 
+可选 `stateflow.rpc` 使用同一 `StatePlaneAPI` 校验与响应语义，避免 HTTP/gRPC
+实现分叉。`StatePlaneRpcRequest` 携带 canonical JSON payload/query，响应保留
+HTTP-compatible status code；传输或参数错误使用标准 gRPC status。
+
+## gRPC
+
+`StatePlaneService` 覆盖 Southbound 写入、Snapshot/State/Graph/Metric/Schema
+读取以及 server-streaming `WatchState`。Python client 同时实现 Semantic Adapter
+所需 writer 接口，因此现有 Runtime/KV/Kubernetes/DCGM Adapter 无需修改。
+
+```python
+from stateflow.rpc import StatePlaneGRPCClient
+
+with StatePlaneGRPCClient("127.0.0.1:50051") as client:
+    status, snapshot = client.call(
+        "GetSnapshot",
+        payload={"entities": ["deployment/instance/i1"], "keys": ["instance.*"]},
+    )
+```
+
+当前 gRPC server 使用 insecure channel；TLS、认证、租户授权、watch coalesce 和
+持久 cursor 仍属于生产化工作。
+
 ## Southbound
 
 | Method | Path | 对应 Contract |

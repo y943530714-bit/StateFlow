@@ -51,7 +51,8 @@
 - [x] HTTP Northbound API：GetState/GetSnapshot/QueryGraph/Change Cursor/QueryMetrics/GetFreshness/ListSchema。
 - [x] Gateway Adapter：自动投影 Request、候选 Runtime/Instance 和实际 executing_on 关系。
 - [x] 独立 Adapter 进程与 HTTP Southbound writer。
-- [ ] gRPC API。
+- [x] 可选 protobuf/gRPC API、Python client、Semantic Adapter writer 与基础
+  server-streaming WatchState。
 - [x] Runtime/KV/Kubernetes/DCGM 协议无关语义 Adapter 与共享 Correlation Resolver。
 - [x] `Request↔Runtime↔Instance↔Node↔KV↔Resource` 请求级关系物化。
 - [x] vLLM/SGLang/Ray Serve/DCGM Prometheus、Kubernetes list-watch、KV metadata
@@ -60,7 +61,8 @@
 - [x] 声明式 Runtime metric profile、Mooncake/LMCache JSON profile、Kubernetes
   Node/Pod 双游标与 410 relist recovery（fixture 验证）。
 - [ ] 目标环境版本联调与 profile 差异校验。
-- [ ] WatchState 长连接的 backpressure/coalesce；当前为可恢复 HTTP cursor polling。
+- [ ] WatchState coalesce、持久 cursor 与显式队列指标；当前 gRPC stream 具备
+  cursor 恢复与 transport backpressure。
 - [ ] 持久 Hot Store、Relation Index 和 adapter watermark。
 
 验收：同一候选集共享 snapshot_token；过期或缺失状态不静默补默认值；与 owner API 对照具备一致性报告；关闭 StateFlow 不影响现有 serving。
@@ -122,7 +124,7 @@
 | 迭代 | 可交付物 | 退出条件 |
 | --- | --- | --- |
 | M1（本轮） | v1.1 contracts、in-memory State Plane、routing bridge、测试、文档 | 全量回归通过；旧 API 兼容 |
-| M2（当前） | HTTP Southbound/Northbound API；Gateway Request/Runtime adapter；独立 Adapter HTTP writer | 功能与集成测试已通过；已有进程内 Snapshot 延迟基线；待补 gRPC |
+| M2（已完成） | HTTP/gRPC Southbound/Northbound API；Gateway Request/Runtime adapter；独立 Adapter writer | HTTP/gRPC 互操作测试通过；已有进程内 Snapshot 延迟基线 |
 | M3（进行中） | 语义 Adapter、完整两图物化、Runtime/DCGM/K8s/KV profile、list-watch 与进程化已完成；待目标环境联调 | Request↔Instance↔Node↔KV 可重建；真实数据源联调通过 |
 | M4 | Analytical Prediction service + shadow journal/replay | 预测误差与 coverage 可观测 |
 | M5 | Agent-aware KV dry-run → controlled closed-loop | 安全指标达标且相对 baseline 有增量 |

@@ -254,3 +254,54 @@ message Feedback {
   string replay_pointer = 9;
   google.protobuf.Timestamp timestamp = 10;
 }
+
+// The State Plane RPC surface reuses the canonical JSON payload accepted by
+// StatePlaneAPI. This keeps HTTP and gRPC semantics aligned while typed state
+// values and extensible graph attributes continue to evolve.
+message StatePlaneRpcRequest {
+  string payload_json = 1;
+  map<string, string> query = 2;
+}
+
+message StatePlaneRpcResponse {
+  int32 status_code = 1;
+  string payload_json = 2;
+}
+
+message WatchStateRequest {
+  int64 after_cursor = 1;
+  string entity_prefix = 2;
+  repeated string keys = 3;
+  int32 batch_size = 4;
+  bool follow = 5;
+  int32 poll_interval_ms = 6;
+}
+
+message StateChange {
+  int64 cursor = 1;
+  string kind = 2;
+  string subject_ref = 3;
+  string key_or_relation = 4;
+  int64 version = 5;
+  google.protobuf.Timestamp timestamp = 6;
+}
+
+service StatePlaneService {
+  rpc RegisterComponent(StatePlaneRpcRequest) returns (StatePlaneRpcResponse);
+  rpc UpsertEntities(StatePlaneRpcRequest) returns (StatePlaneRpcResponse);
+  rpc PublishState(StatePlaneRpcRequest) returns (StatePlaneRpcResponse);
+  rpc PublishMetrics(StatePlaneRpcRequest) returns (StatePlaneRpcResponse);
+  rpc PublishEvents(StatePlaneRpcRequest) returns (StatePlaneRpcResponse);
+  rpc UpsertRelations(StatePlaneRpcRequest) returns (StatePlaneRpcResponse);
+  rpc Heartbeat(StatePlaneRpcRequest) returns (StatePlaneRpcResponse);
+  rpc GetState(StatePlaneRpcRequest) returns (StatePlaneRpcResponse);
+  rpc GetSnapshot(StatePlaneRpcRequest) returns (StatePlaneRpcResponse);
+  rpc ReadSnapshot(StatePlaneRpcRequest) returns (StatePlaneRpcResponse);
+  rpc QueryGraph(StatePlaneRpcRequest) returns (StatePlaneRpcResponse);
+  rpc QueryMetrics(StatePlaneRpcRequest) returns (StatePlaneRpcResponse);
+  rpc GetFreshness(StatePlaneRpcRequest) returns (StatePlaneRpcResponse);
+  rpc ListSchema(StatePlaneRpcRequest) returns (StatePlaneRpcResponse);
+  rpc ListComponents(StatePlaneRpcRequest) returns (StatePlaneRpcResponse);
+  rpc ListHeartbeats(StatePlaneRpcRequest) returns (StatePlaneRpcResponse);
+  rpc WatchState(WatchStateRequest) returns (stream StateChange);
+}

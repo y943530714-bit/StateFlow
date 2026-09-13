@@ -1,4 +1,4 @@
-"""Independent source-adapter process for the HTTP State Plane."""
+"""Independent source-adapter process for the State Plane."""
 
 from __future__ import annotations
 
@@ -50,6 +50,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--source-endpoint", required=True)
     parser.add_argument("--state-plane-url", required=True)
+    parser.add_argument(
+        "--state-plane-transport", choices=("http", "grpc"), default="http"
+    )
     parser.add_argument("--runtime-id", default="")
     parser.add_argument("--instance-id", default="")
     parser.add_argument("--node-id", default="")
@@ -70,9 +73,7 @@ def build_operation(args: argparse.Namespace, plane=None) -> Operation:
     target = (
         plane
         if plane is not None
-        else StatePlaneHTTPClient(
-            args.state_plane_url, timeout=args.state_plane_timeout
-        )
+        else _state_plane_client(args)
     )
     source_name = args.source
     if source_name in {"vllm", "sglang", "ray-serve"}:
@@ -196,6 +197,22 @@ def _labels(values: list[str]) -> dict[str, str]:
             raise ValueError("--metric-label must use KEY=VALUE")
         result[key.strip()] = item
     return result
+
+
+def _state_plane_client(args: argparse.Namespace):
+    if args.state_plane_transport == "http":
+        return StatePlaneHTTPClient(
+            args.state_plane_url, timeout=args.state_plane_timeout
+        )
+    try:
+        from ..rpc import StatePlaneGRPCClient
+    except ImportError as exc:
+        raise ValueError(
+            "gRPC support is not installed; install the package with [grpc]"
+        ) from exc
+    return StatePlaneGRPCClient(
+        args.state_plane_url, timeout=args.state_plane_timeout
+    )
 
 
 def _bearer_token(path: str) -> str:

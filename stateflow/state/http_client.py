@@ -39,8 +39,8 @@ class StatePlaneHTTPClient:
     def list_components(self) -> tuple[ComponentDescriptor, ...]:
         payload = self._request("GET", "/components")
         return tuple(
-            _component(item)
-            for item in _objects(payload.get("components"), "components")
+            decode_component(item)
+            for item in decode_objects(payload.get("components"), "components")
         )
 
     def register_component(self, descriptor: ComponentDescriptor) -> None:
@@ -53,29 +53,29 @@ class StatePlaneHTTPClient:
         payload = self._request(
             "POST", "/graph/query", {"roots": [entity_ref], "depth": 0}
         )
-        entities = _objects(payload.get("entities"), "entities")
-        return _entity(entities[0]) if entities else None
+        entities = decode_objects(payload.get("entities"), "entities")
+        return decode_entity(entities[0]) if entities else None
 
     def publish_state(self, updates: Iterable[StateUpdate]) -> list[WriteResult]:
         payload = self._request(
             "POST",
             "/state/publish",
-            {"updates": [_state_update(item) for item in updates]},
+            {"updates": [encode_state_update(item) for item in updates]},
             accepted_statuses=(200, 409),
         )
-        return _write_results(payload)
+        return decode_write_results(payload)
 
     def upsert_relations(self, updates: Iterable[RelationUpdate]) -> list[WriteResult]:
         payload = self._request(
             "POST",
             "/relations/upsert",
-            {"relations": [_relation_update(item) for item in updates]},
+            {"relations": [encode_relation_update(item) for item in updates]},
             accepted_statuses=(200, 409),
         )
-        return _write_results(payload)
+        return decode_write_results(payload)
 
     def heartbeat(self, heartbeat: Heartbeat) -> None:
-        self._request("POST", "/heartbeat", _heartbeat(heartbeat))
+        self._request("POST", "/heartbeat", encode_heartbeat(heartbeat))
 
     def _request(
         self,
@@ -117,21 +117,21 @@ class StatePlaneHTTPClient:
         return payload
 
 
-def _state_update(value: StateUpdate) -> dict[str, Any]:
+def encode_state_update(value: StateUpdate) -> dict[str, Any]:
     result = to_jsonable(value)
     result["ttl_ms"] = _milliseconds(value.ttl)
     result.pop("ttl", None)
     return result
 
 
-def _relation_update(value: RelationUpdate) -> dict[str, Any]:
+def encode_relation_update(value: RelationUpdate) -> dict[str, Any]:
     result = to_jsonable(value)
     result["ttl_ms"] = _milliseconds(value.ttl)
     result.pop("ttl", None)
     return result
 
 
-def _heartbeat(value: Heartbeat) -> dict[str, Any]:
+def encode_heartbeat(value: Heartbeat) -> dict[str, Any]:
     result = to_jsonable(value)
     result["ttl_ms"] = _milliseconds(value.ttl)
     result.pop("ttl", None)
@@ -142,7 +142,7 @@ def _milliseconds(value: timedelta | None) -> int | None:
     return None if value is None else max(0, int(value.total_seconds() * 1000))
 
 
-def _write_results(payload: Mapping[str, Any]) -> list[WriteResult]:
+def decode_write_results(payload: Mapping[str, Any]) -> list[WriteResult]:
     return [
         WriteResult(
             accepted=bool(item.get("accepted", False)),
@@ -153,11 +153,11 @@ def _write_results(payload: Mapping[str, Any]) -> list[WriteResult]:
             version=int(item.get("version", 0)),
             reason=str(item.get("reason", "")),
         )
-        for item in _objects(payload.get("results"), "results")
+        for item in decode_objects(payload.get("results"), "results")
     ]
 
 
-def _component(value: Mapping[str, Any]) -> ComponentDescriptor:
+def decode_component(value: Mapping[str, Any]) -> ComponentDescriptor:
     return ComponentDescriptor(
         component_id=str(value.get("component_id", "")),
         kind=str(value.get("kind", "")),
@@ -175,7 +175,7 @@ def _component(value: Mapping[str, Any]) -> ComponentDescriptor:
     )
 
 
-def _entity(value: Mapping[str, Any]) -> GraphEntity:
+def decode_entity(value: Mapping[str, Any]) -> GraphEntity:
     labels = value.get("labels")
     return GraphEntity(
         ref=str(value.get("ref", "")),
@@ -191,7 +191,7 @@ def _entity(value: Mapping[str, Any]) -> GraphEntity:
     )
 
 
-def _objects(value: Any, name: str) -> tuple[Mapping[str, Any], ...]:
+def decode_objects(value: Any, name: str) -> tuple[Mapping[str, Any], ...]:
     if not isinstance(value, list) or not all(
         isinstance(item, Mapping) for item in value
     ):
@@ -213,4 +213,14 @@ def _json_object(raw: bytes) -> dict[str, Any]:
     return value
 
 
-__all__ = ["StatePlaneHTTPClient", "StatePlaneHTTPError"]
+__all__ = [
+    "StatePlaneHTTPClient",
+    "StatePlaneHTTPError",
+    "decode_component",
+    "decode_entity",
+    "decode_objects",
+    "decode_write_results",
+    "encode_heartbeat",
+    "encode_relation_update",
+    "encode_state_update",
+]

@@ -19,7 +19,8 @@ implemented as an incrementally compatible Python reference stack.
 | Request-scoped two-graph materialization | `stateflow/adapters/bridge.py` |
 | HTTP/Prometheus source ingestion | `stateflow/adapters/source.py`, `clients.py` |
 | Failure-isolated polling process loop | `stateflow/adapters/runner.py` |
-| Independent adapter process + HTTP writer | `stateflow/adapters/process.py`, `stateflow/state/http_client.py` |
+| Independent adapter process + HTTP/gRPC writer | `stateflow/adapters/process.py`, `stateflow/state/http_client.py`, `stateflow/rpc/client.py` |
+| Optional State Plane gRPC server/client | `proto/stateflow.proto`, `stateflow/rpc/` |
 | Agent State header and full schema | `stateflow/state/schema.py` |
 | Event + snapshot + hot view | `stateflow/state/event.py`, `stateflow/state/store/in_memory.py`, `stateflow/state/scheduling_view/` |
 | Success LCB and success gate | `success_predictor.py`, `success_gate.py` |

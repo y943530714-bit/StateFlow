@@ -35,6 +35,8 @@ The implementation includes:
   failure-isolated polling runners;
 - a standard-library State Plane HTTP writer and installable
   `stateflow-adapter` process entry point, keeping collection off the request path;
+- an optional protobuf/gRPC State Plane server and client with unary API parity,
+  resumable server-streaming `WatchState`, and Semantic Adapter writer support;
 - an in-memory backend and a small `urllib` OpenAI-compatible backend;
 - a standard-library HTTP server for local integration tests.
 
@@ -71,6 +73,16 @@ stateflow-adapter --source vllm \
   --state-plane-url http://stateflow:8080 \
   --runtime-id runtime-a --instance-id replica-a
 ```
+
+Install the optional transport and expose it beside the HTTP gateway with:
+
+```bash
+pip install '.[grpc]'
+stateflow --host 127.0.0.1 --port 8080 --grpc-port 50051
+```
+
+An adapter can select it with `--state-plane-transport grpc` and a
+`host:port` value in `--state-plane-url`.
 
 ## Integration boundary
 

@@ -73,19 +73,43 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run the StateFlow local demo gateway")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8080)
+    parser.add_argument("--grpc-host", default="127.0.0.1")
+    parser.add_argument("--grpc-port", type=int)
     args = parser.parse_args(argv)
 
-    server = StateFlowHTTPServer(build_demo_gateway(), args.host, args.port)
-    host, port = server.address
-    print(f"StateFlow demo listening on http://{host}:{port}")
-    print("POST /v1/chat/completions, /v1/responses, or /v1/messages")
-    print("State Plane API: /v1/state-plane/*")
+    grpc_factory = None
+    if args.grpc_port is not None:
+        try:
+            from .rpc import create_grpc_server
+        except ImportError:
+            parser.error(
+                "gRPC support is not installed; install the package with [grpc]"
+            )
+        grpc_factory = create_grpc_server
+
+    gateway = build_demo_gateway()
+    server = None
+    grpc_server = None
     try:
+        server = StateFlowHTTPServer(gateway, args.host, args.port)
+        host, port = server.address
+        print(f"StateFlow demo listening on http://{host}:{port}")
+        print("POST /v1/chat/completions, /v1/responses, or /v1/messages")
+        print("State Plane API: /v1/state-plane/*")
+        if grpc_factory is not None:
+            grpc_server, grpc_port = grpc_factory(
+                gateway.state_plane, f"{args.grpc_host}:{args.grpc_port}"
+            )
+            grpc_server.start()
+            print(f"State Plane gRPC: {args.grpc_host}:{grpc_port}")
         server.serve_forever()
     except KeyboardInterrupt:
         return 0
     finally:
-        server.shutdown()
+        if server is not None:
+            server.shutdown()
+        if grpc_server is not None:
+            grpc_server.stop(grace=1).wait()
     return 0
 
 

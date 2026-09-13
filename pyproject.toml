@@ -4,10 +4,18 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stateflow"
-version = "0.3.2"
+version = "0.3.3"
 description = "State and prediction driven control plane for stateful agent infrastructure"
 requires-python = ">=3.10"
 dependencies = []
+
+[project.optional-dependencies]
+grpc = ["grpcio>=1.83.1,<2", "protobuf>=7.36.1,<8"]
+grpc-dev = [
+    "grpcio>=1.83.1,<2",
+    "protobuf>=7.36.1,<8",
+    "grpcio-tools>=1.83.1,<2",
+]
 
 [project.scripts]
 stateflow = "stateflow.demo:main"
