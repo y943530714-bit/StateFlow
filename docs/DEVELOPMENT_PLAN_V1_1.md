@@ -17,7 +17,7 @@
 | Cross-graph Relation | 无 | 已限制为 deployed_on/executing_on/located_on | 一致性校验与生命周期回收 |
 | Snapshot / Query | AgentState 深拷贝 | 已实现不可变 token、freshness、completeness、显式 missing/stale | 批量 RPC、分布式 logical time |
 | Subscribe | AgentState callback | 已实现可恢复 cursor change feed 与 callback | backpressure、coalesce、持久游标 |
-| Candidate-Action Prediction | 分散在 Scheduler 内 | 已实现通用四维 Prediction 契约及路由转换桥 | analytical predictor service、校准 |
+| Candidate-Action Prediction | 分散在 Scheduler 内 | 已实现通用四维契约、路由转换桥和 shadow analytical service | journal/replay、校准 |
 | Decision / Action / Feedback | RoutingDecision 与状态历史 | 已实现通用记录契约 | Action Adapter、Outcome join、Feedback ledger |
 | Reservation / Commit | 无 | 已定义 Reservation 契约 | 原子 reserve/commit/release 与冲突指标 |
 | Agent-aware KV | 仅路由成本中的 KV value | 未闭环 | KV candidate、transfer model、Mooncake/LMCache adapter |
@@ -73,11 +73,12 @@
 
 - [x] performance/reliability/cost/future_state + confidence 通用契约。
 - [x] 现有 Success-First CandidateEvaluation 转换桥。
-- [ ] Transfer：`bytes / effective_bw + setup`。
-- [ ] Routing latency：queue + KV transfer/recompute + prefill + decode。
-- [ ] HBM pressure：used + reserved + predicted KV growth。
-- [ ] Deterministic cost accounting。
-- [ ] applicability、feature freshness、model version、fallback 和 calibration error 存储。
+- [x] Transfer：`bytes / effective_bw + setup`。
+- [x] Routing latency：queue + KV transfer/recompute + prefill + decode。
+- [x] HBM pressure：used + reserved + predicted KV growth。
+- [x] Deterministic cost accounting。
+- [x] applicability、feature freshness、model version 和 fallback 输出。
+- [ ] Prediction journal/replay 与 calibration error 存储。
 
 验收：shadow 预测生成 MAE/MAPE/calibration/coverage 报表；低置信度自动退回当前 heuristic；所有预测可按 snapshot/model version 重放。
 

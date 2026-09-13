@@ -37,6 +37,8 @@ The implementation includes:
   `stateflow-adapter` process entry point, keeping collection off the request path;
 - an optional protobuf/gRPC State Plane server and client with unary API parity,
   resumable server-streaming `WatchState`, and Semantic Adapter writer support;
+- a shadow-only analytical Prediction service for deterministic transfer,
+  routing latency, HBM pressure, and cost estimates with explicit fallback;
 - an in-memory backend and a small `urllib` OpenAI-compatible backend;
 - a standard-library HTTP server for local integration tests.
 

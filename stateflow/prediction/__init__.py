@@ -9,8 +9,11 @@ from .contracts import (
     PredictionRequest,
     ReliabilityPrediction,
 )
+from .model import AnalyticalPredictionModel, PredictionModel
+from .service import PredictionService
 
 __all__ = [
+    "AnalyticalPredictionModel",
     "CandidateAction",
     "CostPrediction",
     "FutureStatePrediction",
@@ -18,4 +21,6 @@ __all__ = [
     "Prediction",
     "PredictionRequest",
     "ReliabilityPrediction",
+    "PredictionModel",
+    "PredictionService",
 ]

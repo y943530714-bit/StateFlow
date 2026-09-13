@@ -10,6 +10,7 @@ implemented as an incrementally compatible Python reference stack.
 | Component/Deployment graphs and relation guardrails | `stateflow/state/plane.py` |
 | Immutable snapshot, freshness/completeness, change cursor | `stateflow/state/plane.py` |
 | Candidate-Action Prediction contract | `stateflow/prediction/` |
+| Shadow analytical prediction model/service | `stateflow/prediction/model.py`, `service.py` |
 | Policy/Decision/Action/Outcome/Feedback contracts | `stateflow/control/` |
 | Existing scheduler → v1.1 replay record bridge | `stateflow/scheduler/contract_bridge.py` |
 | Southbound/Northbound HTTP facade | `stateflow/state/api.py`, `stateflow/gateway/server/http.py` |
