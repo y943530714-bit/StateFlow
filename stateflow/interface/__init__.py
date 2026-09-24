@@ -1,5 +1,5 @@
 """Unified state ingress and action dispatch."""
 
-from .service import UnifiedStateInterface
+from stateflow.interface.service import UnifiedStateInterface
 
 __all__ = ["UnifiedStateInterface"]

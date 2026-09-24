@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable
 
-from ..state.schema import to_jsonable
+from stateflow.state_manager.schema import to_jsonable
 
 
 @dataclass(frozen=True)

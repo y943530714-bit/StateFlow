@@ -7,15 +7,15 @@ from contextlib import contextmanager
 from threading import Lock
 from typing import TYPE_CHECKING, Callable, ContextManager, Iterator, TypeVar
 
-from ..action_catalog import Action, ActionCatalog, ActionDispatchError
-from ..state.event import AgentStateEvent, AppendResult
-from ..state_manager import StateManager
+from stateflow.action_catalog import Action, ActionCatalog, ActionDispatchError
+from stateflow.state_manager.event import AgentStateEvent, AppendResult
+from stateflow.state_manager import StateManager
 
 T = TypeVar("T")
 
 
 if TYPE_CHECKING:
-    from ..gateway.normalizer.request import ProviderNeutralRequest
+    from stateflow.interface.request import ProviderNeutralRequest
 
 
 class UnifiedStateInterface:

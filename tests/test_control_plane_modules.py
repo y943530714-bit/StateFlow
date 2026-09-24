@@ -3,11 +3,11 @@
 import unittest
 
 from stateflow.action_catalog import ActionCatalog, ActionDispatchError
-from stateflow.demo import build_demo_gateway
-from stateflow.gateway.normalizer.request import normalize_request
+from stateflow.interface.demo import build_demo_gateway
+from stateflow.interface.request import normalize_request
 from stateflow.interface import UnifiedStateInterface
 from stateflow.planner import Planner
-from stateflow.state.event import AgentStateEvent
+from stateflow.state_manager.event import AgentStateEvent
 from stateflow.state_manager import StateManager
 
 
@@ -47,7 +47,7 @@ class ModuleBoundaryTests(unittest.TestCase):
         self.assertEqual(invoked, [action.target])
 
     def test_catalog_without_route_action_cannot_plan(self):
-        from stateflow.scheduler.types import NoFeasibleTarget
+        from stateflow.planner.types import NoFeasibleTarget
 
         gateway = build_demo_gateway()
         gateway.control_plane.catalog = ActionCatalog([])

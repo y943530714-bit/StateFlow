@@ -9,8 +9,8 @@ import unittest
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from stateflow.config import build_configured_gateway
-from stateflow.gateway.server import StateFlowHTTPServer
+from stateflow.interface.config import build_configured_gateway
+from stateflow.interface.http import StateFlowHTTPServer
 
 
 class _BackendHandler(BaseHTTPRequestHandler):

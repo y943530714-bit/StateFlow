@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import unittest
 
-from stateflow.scheduler.harness.success_first import SuccessFirstScheduler
-from stateflow.scheduler.harness.success_first.success_gate import success_gate
-from stateflow.scheduler.types import CandidateEvaluation, NoFeasibleTarget, SchedulerConfig
-from stateflow.state.schema import AgentPhase, HarnessSchedulingView, TargetCandidate
+from stateflow.planner.scheduler import SuccessFirstScheduler
+from stateflow.planner.success_gate import success_gate
+from stateflow.planner.types import CandidateEvaluation, NoFeasibleTarget, SchedulerConfig
+from stateflow.state_manager.schema import AgentPhase, HarnessSchedulingView, TargetCandidate
 
 
 def make_view(**overrides) -> HarnessSchedulingView:

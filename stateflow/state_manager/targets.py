@@ -7,7 +7,7 @@ from threading import RLock
 from time import monotonic
 from typing import Any, Iterable
 
-from ..state.schema import TargetCandidate
+from stateflow.state_manager.schema import TargetCandidate
 
 
 class TargetRegistry:

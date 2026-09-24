@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from ..state.event import AgentStateEvent, AppendResult
-from ..state.store.in_memory import InMemoryStateStore
-from .targets import TargetRegistry
+from stateflow.state_manager.event import AgentStateEvent, AppendResult
+from stateflow.state_manager.store import InMemoryStateStore
+from stateflow.state_manager.targets import TargetRegistry
 
 
 class StateManager:
