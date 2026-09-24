@@ -9,7 +9,8 @@ from pathlib import Path
 
 from .backend.base import BackendRegistry
 from .backend.openai_compatible.http import OpenAICompatibleBackend
-from .gateway.service import RequestGateway, TargetRegistry
+from .gateway.service import RequestGateway
+from .state_manager import TargetRegistry
 from .scheduler.harness.success_first.scheduler import SuccessFirstScheduler
 from .scheduler.types import SchedulerConfig
 from .state.schema import TargetCandidate

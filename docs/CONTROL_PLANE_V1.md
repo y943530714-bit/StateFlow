@@ -2,6 +2,8 @@
 
 **定位**：StateFlow 是面向 Agent 工作流的状态与决策控制平面。它关联 Agent、推理、KV、工具和资源状态，选择基础设施动作，并通过统一接口下发给现有组件执行。StateFlow 不替代 Agent 的任务规划，也不接管推理引擎或工具运行时的实际执行。
 
+**当前代码范围**：四个模块分别位于 `stateflow/interface/`、`stateflow/state_manager/`、`stateflow/planner/`、`stateflow/action_catalog/`；`stateflow/control_plane/` 负责装配。当前只有 `route_model` 实际可下发，其他动作是后续扩展方向。以 [架构代码对照](ARCHITECTURE.md) 和 [接入说明](../README.md) 为实现依据。
+
 ## 1. 核心架构
 
 ```mermaid
@@ -49,7 +51,7 @@ flowchart TB
 
 1. 排除不满足模型能力、容量、预算等硬约束的候选。
 2. 优先保证任务成功；持续失败或明显恢复阶段触发强模型升级。成功概率证据不足时采用保守规则，不虚构精确预测值。
-3. 在满足前两项的候选中，依次比较成本与延迟；返回 `route_model` / `choose_instance` 动作及理由。
+3. 在满足前两项的候选中，依次比较成本与延迟；返回携带模型与实例的 `route_model` 动作及理由。
 4. Unified State Interface 同步下发给 Scheduler；实际路由结果与最终任务结果回流，供后续评估和校准。
 
 **验收**：一条运行轨迹能够完整追溯“输入状态—候选动作—选择理由—下发—执行反馈”；正常进展与连续失败能产生不同模型决策；接口超时或状态过期时请求仍按默认策略运行。用固定强模型及现有调度器作对照，分别报告任务成功率、平均成本、端到端时延与决策开销；第一版不预设性能收益。

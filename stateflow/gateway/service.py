@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from contextlib import contextmanager
-from threading import RLock
-from time import monotonic
 from typing import Any, Iterable, Iterator
 
 from ..adapters.gateway import GatewayStateProjector
 from ..backend.base import BackendError, BackendRegistry
-from ..control_plane import Action, ActionCatalog, ControlPlane
+from ..action_catalog import Action, ActionCatalog
+from ..control_plane import ControlPlane
+from ..state_manager import StateManager, TargetRegistry
 from ..scheduler.harness.success_first.scheduler import SuccessFirstScheduler
 from ..scheduler.types import NoFeasibleTarget, RoutingDecision
 from ..state.event import AgentStateEvent
@@ -38,68 +38,6 @@ class GatewayResponse:
         return to_jsonable(result)
 
 
-class TargetRegistry:
-    def __init__(self, targets: Iterable[TargetCandidate] = ()) -> None:
-        self._targets = list(targets)
-        self._overlays: dict[tuple[str, str, str], tuple[float, dict[str, Any]]] = {}
-        self._lock = RLock()
-
-    def register(self, target: TargetCandidate) -> None:
-        with self._lock:
-            self._targets.append(target)
-
-    def all(self) -> list[TargetCandidate]:
-        now = monotonic()
-        with self._lock:
-            result = []
-            for target in self._targets:
-                key = (target.model_id, target.endpoint_id, target.replica_id)
-                overlay = self._overlays.get(key)
-                if overlay and overlay[0] > now:
-                    result.append(replace(target, **overlay[1]))
-                else:
-                    self._overlays.pop(key, None)
-                    result.append(target)
-            return result
-
-    def update(self, report: dict[str, Any]) -> None:
-        """Apply an expiring instance status report; do not mutate model priors."""
-
-        key = tuple(str(report.get(part, "")) for part in (
-            "model_id", "endpoint_id", "replica_id"
-        ))
-        allowed = {
-            "available", "healthy", "queue_latency_seconds", "load_balance_score",
-            "local_kv_tokens", "remote_kv_tokens",
-        }
-        changes = {name: report[name] for name in allowed if name in report}
-        if not changes or set(report) - allowed - {
-            "model_id", "endpoint_id", "replica_id", "ttl_seconds"
-        }:
-            raise ValueError("target report contains no status or unsupported fields")
-        for name in ("available", "healthy"):
-            if name in changes and not isinstance(changes[name], bool):
-                raise ValueError(f"{name} must be a boolean")
-        for name in allowed - {"available", "healthy"}:
-            if name in changes and (
-                isinstance(changes[name], bool)
-                or not isinstance(changes[name], (int, float))
-                or changes[name] < 0
-            ):
-                raise ValueError(f"{name} must be non-negative")
-        ttl = float(report.get("ttl_seconds", 30))
-        if not 0 < ttl <= 3600:
-            raise ValueError("ttl_seconds must be between 0 and 3600")
-        with self._lock:
-            if key not in {
-                (item.model_id, item.endpoint_id, item.replica_id) for item in self._targets
-            }:
-                raise KeyError(f"unknown target {key}")
-            current = self._overlays.get(key)
-            previous = current[1] if current and current[0] > monotonic() else {}
-            self._overlays[key] = (monotonic() + ttl, {**previous, **changes})
-
-
 class RequestGateway:
     """Routes normalized requests and keeps adapter/state failures off hot path."""
 
@@ -122,7 +60,8 @@ class RequestGateway:
         self.last_state_projection_error = ""
         if self.scheduler.decision_sink is None:
             self.scheduler.decision_sink = self.state_store.record_routing_decision
-        self.control_plane = ControlPlane(self.state_store, self.scheduler, action_catalog)
+        self.state_manager = StateManager(self.state_store, self.targets)
+        self.control_plane = ControlPlane(self.state_manager, self.scheduler, action_catalog)
 
     def plan(self, request: ProviderNeutralRequest) -> tuple[RoutingDecision, Action]:
         """Synchronous decision hook for schedulers that execute requests themselves."""

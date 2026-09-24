@@ -71,7 +71,7 @@ class StateFlowHTTPServer:
                         return
                     self._write(
                         200,
-                        gateway.state_store.get_scheduling_view(session_id, task_id).to_dict(),
+                        gateway.state_manager.get_scheduling_view(session_id, task_id).to_dict(),
                     )
                     return
                 self._write(404, {"error": {"message": "not found"}})
@@ -86,7 +86,7 @@ class StateFlowHTTPServer:
                         return
                     if parsed.path in {"/v1/state/events", "/v1/control/state"}:
                         if body.get("event_type") == "TARGET_UPDATED":
-                            gateway.targets.update(dict(body.get("payload") or {}))
+                            gateway.state_manager.update_target(dict(body.get("payload") or {}))
                             self._write(200, {"accepted": True})
                             return
                         if "program_id" in body and "session_id" not in body:
