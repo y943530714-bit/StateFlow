@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
+from typing import Iterator
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -18,18 +20,7 @@ class OpenAICompatibleBackend:
         self.timeout_seconds = timeout_seconds
 
     def send(self, request: ProviderNeutralRequest, target: TargetCandidate) -> BackendResponse:
-        path = target.metadata.get("path")
-        if not path:
-            path = {
-                "openai_chat": "/v1/chat/completions",
-                "openai_responses": "/v1/responses",
-                "anthropic_messages": "/v1/messages",
-            }[request.protocol]
-        body = json.dumps(request.backend_payload(target.model_id)).encode("utf-8")
-        headers = {"Content-Type": "application/json"}
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
-        req = Request(self.base_url + path, data=body, headers=headers, method="POST")
+        req = self._request(request, target)
         try:
             with urlopen(req, timeout=self.timeout_seconds) as response:
                 raw = response.read().decode("utf-8")
@@ -44,6 +35,39 @@ class OpenAICompatibleBackend:
             raise BackendError(f"backend HTTP {exc.code}: {detail[:500]}") from exc
         except (URLError, TimeoutError, json.JSONDecodeError) as exc:
             raise BackendError(f"backend request failed: {exc}") from exc
+
+    @contextmanager
+    def open_stream(
+        self, request: ProviderNeutralRequest, target: TargetCandidate
+    ) -> Iterator[Iterator[bytes]]:
+        """Forward SSE bytes from an OpenAI-compatible backend without buffering."""
+
+        req = self._request(request, target)
+        try:
+            with urlopen(req, timeout=self.timeout_seconds) as response:
+                if "text/event-stream" not in response.headers.get("Content-Type", ""):
+                    raise BackendError("backend did not return an event stream")
+                yield iter(response)
+        except HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise BackendError(f"backend HTTP {exc.code}: {detail[:500]}") from exc
+        except (URLError, TimeoutError) as exc:
+            raise BackendError(f"backend stream failed: {exc}") from exc
+
+    def _request(self, request: ProviderNeutralRequest, target: TargetCandidate) -> Request:
+        path = target.metadata.get("path")
+        if not path:
+            path = {
+                "openai_chat": "/v1/chat/completions",
+                "openai_responses": "/v1/responses",
+                "anthropic_messages": "/v1/messages",
+            }[request.protocol]
+        body = json.dumps(request.backend_payload(target.model_id)).encode("utf-8")
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        base = self.base_url[:-3] if self.base_url.endswith("/v1") and path.startswith("/v1/") else self.base_url
+        return Request(base + path, data=body, headers=headers, method="POST")
 
 
 def _output_tokens(payload: dict) -> int:

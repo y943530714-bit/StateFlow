@@ -1,0 +1,22 @@
+{
+  "backends": {
+    "local": {
+      "base_url": "http://127.0.0.1:8000/v1",
+      "timeout_seconds": 60
+    }
+  },
+  "targets": [
+    {
+      "model_id": "replace-with-served-model-id",
+      "endpoint_id": "local",
+      "replica_id": "local-0",
+      "backend_key": "local",
+      "tier": "capable",
+      "capabilities": ["tool_calling"],
+      "protocols": ["openai_chat"],
+      "base_success": 0.9,
+      "base_uncertainty": 0.1,
+      "inference_cost": 0.0
+    }
+  ]
+}

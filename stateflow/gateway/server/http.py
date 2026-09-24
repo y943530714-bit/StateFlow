@@ -10,6 +10,8 @@ from typing import Any
 from ...state.event import AgentStateEvent
 from ...state.api import StatePlaneAPI
 from ...state.schema import to_jsonable
+from ...scheduler.types import NoFeasibleTarget
+from ...backend.base import BackendError
 from ..normalizer.request import normalize_request
 from ..service import RequestGateway
 
@@ -57,9 +59,12 @@ class StateFlowHTTPServer:
                         },
                     )
                     return
-                if parsed.path == "/v1/state/view":
+                if parsed.path == "/v1/control/actions":
+                    self._write(200, {"actions": gateway.control_plane.catalog.all()})
+                    return
+                if parsed.path in {"/v1/state/view", "/v1/control/state"}:
                     query = parse_qs(parsed.query)
-                    session_id = query.get("session_id", [""])[0]
+                    session_id = query.get("program_id", query.get("session_id", [""]))[0]
                     task_id = query.get("task_id", ["default-task"])[0]
                     if not session_id:
                         self._write(400, {"error": {"message": "session_id is required"}})
@@ -79,13 +84,73 @@ class StateFlowHTTPServer:
                         response = state_plane_api.post(parsed.path, body)
                         self._write(response.status_code, response.payload)
                         return
-                    if parsed.path == "/v1/state/events":
+                    if parsed.path in {"/v1/state/events", "/v1/control/state"}:
+                        if body.get("event_type") == "TARGET_UPDATED":
+                            gateway.targets.update(dict(body.get("payload") or {}))
+                            self._write(200, {"accepted": True})
+                            return
+                        if "program_id" in body and "session_id" not in body:
+                            body["session_id"] = body.pop("program_id")
+                        if not body.get("session_id") or not (body.get("event_type") or body.get("event")):
+                            raise ValueError("program_id/session_id and event_type are required")
                         event = AgentStateEvent.from_mapping(body)
-                        result = gateway.state_store.append_event(event)
+                        result = gateway.control_plane.ingest(event)
                         self._write(200, to_jsonable(result))
+                        return
+                    if parsed.path == "/v1/control/decisions":
+                        protocol = body.get("protocol", "openai_chat")
+                        path_by_protocol = {
+                            "openai_chat": "/v1/chat/completions",
+                            "openai_responses": "/v1/responses",
+                            "anthropic_messages": "/v1/messages",
+                        }
+                        if protocol not in path_by_protocol:
+                            raise ValueError(f"unsupported protocol: {protocol}")
+                        request = normalize_request(path_by_protocol[protocol], body, self.headers)
+                        try:
+                            decision, action = gateway.plan(request)
+                        except NoFeasibleTarget as exc:
+                            self._write(503, {"error": {
+                                "type": "no_feasible_target", "message": str(exc),
+                                "rejections": [item.to_dict() for item in exc.rejections],
+                            }})
+                            return
+                        self._write(200, {"decision": decision.to_dict(), "action": action.to_dict()})
                         return
                     if parsed.path in {"/v1/chat/completions", "/v1/responses", "/v1/messages"}:
                         request = normalize_request(parsed.path, body, self.headers)
+                        if request.stream:
+                            if request.protocol != "openai_chat":
+                                self._write(400, {"error": {
+                                    "type": "unsupported_stream",
+                                    "message": "v1 streaming supports OpenAI chat completions only",
+                                }})
+                                return
+                            started = False
+                            try:
+                                with gateway.stream(request) as (response, chunks):
+                                    self.send_response(response.status_code)
+                                    self.send_header("Content-Type", "text/event-stream")
+                                    self.send_header("Cache-Control", "no-cache")
+                                    self.send_header("Connection", "close")
+                                    for key, value in response.headers.items():
+                                        self.send_header(key, value)
+                                    self.end_headers()
+                                    started = True
+                                    for chunk in chunks:
+                                        self.wfile.write(chunk)
+                                        self.wfile.flush()
+                            except NoFeasibleTarget as exc:
+                                if not started:
+                                    self._write(503, {"error": {"type": "no_feasible_target", "message": str(exc)}})
+                            except BackendError as exc:
+                                if not started:
+                                    self._write(502, {"error": {"type": "backend_error", "message": str(exc)}})
+                            except (BrokenPipeError, ConnectionResetError):
+                                pass
+                            finally:
+                                self.close_connection = True
+                            return
                         response = gateway.handle(request)
                         self._write(response.status_code, response.payload, response.headers)
                         return

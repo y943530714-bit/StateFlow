@@ -1,5 +1,67 @@
 # StateFlow
 
+## Control plane v1 (new codex branch)
+
+This branch implements the small control-plane design in
+[`docs/CONTROL_PLANE_V1.md`](docs/CONTROL_PLANE_V1.md). A harness can call the
+OpenAI-compatible `/v1/chat/completions` endpoint without a harness-specific
+adapter. The configured backend is reached through a provider-neutral adapter;
+StateFlow selects an available model/replica, forwards the request, and returns
+the backend response. OpenAI Chat SSE streaming is forwarded without buffering.
+
+To connect an actual OpenAI-compatible server, copy
+[`examples/local_gateway.json`](examples/local_gateway.json), replace the URL
+and served model ID, then run:
+
+```bash
+python -m stateflow --config examples/local_gateway.json --host 127.0.0.1 --port 8080
+```
+
+The same URL can be used by any harness that supports an OpenAI-compatible
+base URL. `x-stateflow-program-id` links the harness's turns; without it each
+request is a separate program. Additional backends and target replicas can be
+added to the JSON configuration. Target `protocols` declare which of
+`openai_chat`, `openai_responses`, and `anthropic_messages` the upstream
+actually supports. StateFlow forwards each protocol to a backend implementing
+that endpoint; it does not translate between provider protocols. `base_success`
+and `base_uncertainty` are operator-supplied priors, not measured guarantees.
+
+The same **Unified State Interface** also exposes:
+
+| API | Use |
+| --- | --- |
+| `POST /v1/control/state` | Report Agent/infra events and action feedback (`program_id`, `event_type`, `source`, `payload`). |
+| `GET /v1/control/state?program_id=...` | Read the hot scheduling view. |
+| `POST /v1/control/decisions` | Ask for a route action synchronously when an external scheduler sends the model request itself; this does **not** execute the action. |
+| `GET /v1/control/actions` | List the declarative Action Catalog. |
+
+Example of one harness event and one synchronous routing decision:
+
+```bash
+curl -s http://127.0.0.1:8080/v1/control/state -H 'content-type: application/json' \
+  -d '{"program_id":"run-1","event_type":"TASK_STARTED","source":"harness","payload":{"identity":{"harness_type":"coding-agent"}}}'
+curl -s http://127.0.0.1:8080/v1/control/decisions -H 'content-type: application/json' \
+  -H 'x-stateflow-program-id: run-1' \
+  -d '{"model":"logical-agent","messages":[{"role":"user","content":"hello"}]}'
+```
+
+`route_model` is the only live action in v1. Actual request forwarding is
+performed by the configured backend adapter. KV pinning, Sandbox actions and
+tool speculation need explicit support from those components and are not
+presented as executable actions. Without enough fresh state the scheduler
+prefers a capable target when one is available. An unavailable backend returns 502;
+in-process state and decisions are reset on restart. Configure authentication
+and network access at the deployment boundary when serving other machines.
+
+An inference backend can post a global `TARGET_UPDATED` event to
+`/v1/control/state` with `payload` containing the configured `model_id`,
+`endpoint_id`, `replica_id`, and any of `healthy`, `available`,
+`queue_latency_seconds`, `load_balance_score`, `local_kv_tokens` or
+`remote_kv_tokens`. A report expires after `ttl_seconds` (default 30), then
+the configured target values apply again; no `program_id` is required.
+
+## Earlier reference implementation
+
 StateFlow is a dependency-free reference implementation of the StateFlow v1.1
 state/prediction-driven control architecture.  It keeps the existing request
 scheduler's strict lexicographic policy:

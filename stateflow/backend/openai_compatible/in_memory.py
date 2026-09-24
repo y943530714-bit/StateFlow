@@ -2,12 +2,32 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+import json
+from typing import Iterator
+
 from ..base import BackendResponse
 from ...gateway.normalizer.request import ProviderNeutralRequest
 from ...state.schema import TargetCandidate
 
 
 class InMemoryBackend:
+    @contextmanager
+    def open_stream(
+        self, request: ProviderNeutralRequest, target: TargetCandidate
+    ) -> Iterator[Iterator[bytes]]:
+        message = f"StateFlow routed request to {target.model_id}@{target.replica_id}."
+        payload = {
+            "id": request.request_id,
+            "object": "chat.completion.chunk",
+            "model": target.model_id,
+            "choices": [{"index": 0, "delta": {"content": message}, "finish_reason": "stop"}],
+        }
+        yield iter((
+            f"data: {json.dumps(payload)}\n\n".encode(),
+            b"data: [DONE]\n\n",
+        ))
+
     def send(self, request: ProviderNeutralRequest, target: TargetCandidate) -> BackendResponse:
         message = f"StateFlow routed request to {target.model_id}@{target.replica_id}."
         if request.protocol == "anthropic_messages":

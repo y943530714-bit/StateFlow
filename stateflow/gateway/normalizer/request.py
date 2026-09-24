@@ -76,6 +76,26 @@ class ProviderNeutralRequest:
 
     def backend_payload(self, target_model: str | None = None) -> dict[str, Any]:
         payload = dict(self.body)
+        # These are StateFlow routing hints, not fields of the provider API.
+        for key in (
+            "request_id", "session_id", "program_id", "task_id", "turn_id", "step_id",
+            "attempt_id", "trace_id", "prompt_tokens", "required_capabilities",
+            "cost_budget", "protocol",
+        ):
+            payload.pop(key, None)
+        metadata = payload.get("metadata")
+        if isinstance(metadata, dict):
+            metadata = dict(metadata)
+            for key in (
+                "session_id", "task_id", "tenant_id", "security_domain",
+                "allowed_models", "allowed_regions", "allowed_cache_domains",
+                "remote_kv_allowed", "cost_budget",
+            ):
+                metadata.pop(key, None)
+            if metadata:
+                payload["metadata"] = metadata
+            else:
+                payload.pop("metadata", None)
         if target_model:
             payload["model"] = target_model
         return payload
@@ -150,7 +170,8 @@ def normalize_request(
         or f"req-{uuid.uuid4().hex[:16]}"
     )
     session_id = (
-        _header(headers, "x-stateflow-session-id", "x-session-id", "session-id")
+        _header(headers, "x-stateflow-program-id", "x-stateflow-session-id", "x-session-id", "session-id")
+        or str(payload.get("program_id", ""))
         or str(payload.get("session_id", ""))
         or str((payload.get("metadata") or {}).get("session_id", ""))
         or f"session-{request_id}"

@@ -71,6 +71,7 @@ def build_demo_gateway() -> RequestGateway:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run the StateFlow local demo gateway")
+    parser.add_argument("--config", help="JSON backend and target configuration (omit for demo)")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--grpc-host", default="127.0.0.1")
@@ -87,14 +88,22 @@ def main(argv: list[str] | None = None) -> int:
             )
         grpc_factory = create_grpc_server
 
-    gateway = build_demo_gateway()
+    if args.config:
+        from .config import build_configured_gateway
+        try:
+            gateway = build_configured_gateway(args.config)
+        except (OSError, ValueError) as exc:
+            parser.error(str(exc))
+    else:
+        gateway = build_demo_gateway()
     server = None
     grpc_server = None
     try:
         server = StateFlowHTTPServer(gateway, args.host, args.port)
         host, port = server.address
-        print(f"StateFlow demo listening on http://{host}:{port}")
+        print(f"StateFlow listening on http://{host}:{port}")
         print("POST /v1/chat/completions, /v1/responses, or /v1/messages")
+        print("Control API: POST /v1/control/state, /v1/control/decisions; GET /v1/control/actions")
         print("State Plane API: /v1/state-plane/*")
         if grpc_factory is not None:
             grpc_server, grpc_port = grpc_factory(

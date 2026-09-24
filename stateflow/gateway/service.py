@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Iterable
+from dataclasses import dataclass, field, replace
+from contextlib import contextmanager
+from threading import RLock
+from time import monotonic
+from typing import Any, Iterable, Iterator
 
 from ..adapters.gateway import GatewayStateProjector
 from ..backend.base import BackendError, BackendRegistry
+from ..control_plane import Action, ActionCatalog, ControlPlane
 from ..scheduler.harness.success_first.scheduler import SuccessFirstScheduler
 from ..scheduler.types import NoFeasibleTarget, RoutingDecision
 from ..state.event import AgentStateEvent
 from ..state.plane import InMemoryStatePlane
-from ..state.schema import TargetCandidate, to_jsonable, utcnow
+from ..state.schema import TargetCandidate, to_jsonable
 from ..state.store.in_memory import InMemoryStateStore
 from .normalizer.request import ProviderNeutralRequest
 
@@ -37,12 +41,63 @@ class GatewayResponse:
 class TargetRegistry:
     def __init__(self, targets: Iterable[TargetCandidate] = ()) -> None:
         self._targets = list(targets)
+        self._overlays: dict[tuple[str, str, str], tuple[float, dict[str, Any]]] = {}
+        self._lock = RLock()
 
     def register(self, target: TargetCandidate) -> None:
-        self._targets.append(target)
+        with self._lock:
+            self._targets.append(target)
 
     def all(self) -> list[TargetCandidate]:
-        return list(self._targets)
+        now = monotonic()
+        with self._lock:
+            result = []
+            for target in self._targets:
+                key = (target.model_id, target.endpoint_id, target.replica_id)
+                overlay = self._overlays.get(key)
+                if overlay and overlay[0] > now:
+                    result.append(replace(target, **overlay[1]))
+                else:
+                    self._overlays.pop(key, None)
+                    result.append(target)
+            return result
+
+    def update(self, report: dict[str, Any]) -> None:
+        """Apply an expiring instance status report; do not mutate model priors."""
+
+        key = tuple(str(report.get(part, "")) for part in (
+            "model_id", "endpoint_id", "replica_id"
+        ))
+        allowed = {
+            "available", "healthy", "queue_latency_seconds", "load_balance_score",
+            "local_kv_tokens", "remote_kv_tokens",
+        }
+        changes = {name: report[name] for name in allowed if name in report}
+        if not changes or set(report) - allowed - {
+            "model_id", "endpoint_id", "replica_id", "ttl_seconds"
+        }:
+            raise ValueError("target report contains no status or unsupported fields")
+        for name in ("available", "healthy"):
+            if name in changes and not isinstance(changes[name], bool):
+                raise ValueError(f"{name} must be a boolean")
+        for name in allowed - {"available", "healthy"}:
+            if name in changes and (
+                isinstance(changes[name], bool)
+                or not isinstance(changes[name], (int, float))
+                or changes[name] < 0
+            ):
+                raise ValueError(f"{name} must be non-negative")
+        ttl = float(report.get("ttl_seconds", 30))
+        if not 0 < ttl <= 3600:
+            raise ValueError("ttl_seconds must be between 0 and 3600")
+        with self._lock:
+            if key not in {
+                (item.model_id, item.endpoint_id, item.replica_id) for item in self._targets
+            }:
+                raise KeyError(f"unknown target {key}")
+            current = self._overlays.get(key)
+            previous = current[1] if current and current[0] > monotonic() else {}
+            self._overlays[key] = (monotonic() + ttl, {**previous, **changes})
 
 
 class RequestGateway:
@@ -55,6 +110,7 @@ class RequestGateway:
         targets: TargetRegistry,
         backends: BackendRegistry,
         state_plane: InMemoryStatePlane | None = None,
+        action_catalog: ActionCatalog | None = None,
     ) -> None:
         self.scheduler = scheduler
         self.state_store = state_store
@@ -66,21 +122,28 @@ class RequestGateway:
         self.last_state_projection_error = ""
         if self.scheduler.decision_sink is None:
             self.scheduler.decision_sink = self.state_store.record_routing_decision
+        self.control_plane = ControlPlane(self.state_store, self.scheduler, action_catalog)
+
+    def plan(self, request: ProviderNeutralRequest) -> tuple[RoutingDecision, Action]:
+        """Synchronous decision hook for schedulers that execute requests themselves."""
+
+        self._record_model_request(request)
+        return self.control_plane.plan_route(request, self._supported_targets(request))
+
+    def _supported_targets(self, request: ProviderNeutralRequest) -> tuple[TargetCandidate, ...]:
+        return tuple(
+            target for target in self.targets.all()
+            if request.protocol in target.metadata.get(
+                "protocols", ("openai_chat", "openai_responses", "anthropic_messages")
+            )
+        )
 
     def handle(self, request: ProviderNeutralRequest) -> GatewayResponse:
-        target_list = tuple(self.targets.all())
+        target_list = self._supported_targets(request)
         self._project(lambda: self.state_projector.record_request(request, target_list))
         self._record_model_request(request)
-        view = self.state_store.get_scheduling_view(request.session_id, request.task_id)
-        # The request itself is authoritative for current prompt/decoder size;
-        # state events from a native adapter may enrich the other fields.
-        view.prompt_tokens = request.prompt_tokens
-        view.predicted_output_tokens = request.predicted_output_tokens
-        view.logical_model = request.model or view.logical_model
-        view.required_capabilities.update(request.required_capabilities)
-
         try:
-            decision = self.scheduler.schedule(view, target_list)
+            decision, action = self.control_plane.plan_route(request, target_list)
         except NoFeasibleTarget as exc:
             self._record_failure(request, "NO_FEASIBLE_TARGET", str(exc))
             return GatewayResponse(
@@ -102,7 +165,9 @@ class RequestGateway:
         )
         try:
             adapter = self.backends.require(target.backend_key)
-            backend_response = adapter.send(request, target)
+            backend_response = self.control_plane.dispatch(
+                action, lambda: adapter.send(request, target), request=request
+            )
         except BackendError as exc:
             self._record_failure(request, "BACKEND", str(exc))
             return GatewayResponse(
@@ -125,6 +190,42 @@ class RequestGateway:
             },
         )
 
+    @contextmanager
+    def stream(self, request: ProviderNeutralRequest) -> Iterator[tuple[GatewayResponse, Iterator[bytes]]]:
+        """Plan once, then forward the upstream event stream unchanged."""
+
+        targets = self._supported_targets(request)
+        self._project(lambda: self.state_projector.record_request(request, targets))
+        self._record_model_request(request)
+        decision, action = self.control_plane.plan_route(request, targets)
+        target = next(item for item in targets if (
+            item.model_id, item.endpoint_id, item.replica_id
+        ) == (
+            decision.selected_model, decision.selected_endpoint, decision.selected_replica
+        ))
+        try:
+            adapter = self.backends.require(target.backend_key)
+            if not hasattr(adapter, "open_stream"):
+                raise BackendError(f"backend {target.backend_key!r} does not support streaming")
+            with self.control_plane.dispatch_stream(
+                action, lambda: adapter.open_stream(request, target), request=request
+            ) as chunks:
+                self._project(lambda: self.state_projector.record_decision(request, decision))
+                yield GatewayResponse(
+                    status_code=200,
+                    payload={},
+                    decision=decision,
+                    headers={
+                        "x-stateflow-decision-id": decision.decision_id,
+                        "x-stateflow-selected-model": decision.selected_model,
+                        "x-stateflow-selected-replica": decision.selected_replica,
+                    },
+                ), chunks
+        except BackendError as exc:
+            self._record_failure(request, "BACKEND", str(exc))
+            raise
+        self._record_model_response(request, 0)
+
     def _project(self, operation) -> None:
         """Keep State Plane materialization out of the serving failure path."""
 
@@ -135,7 +236,13 @@ class RequestGateway:
             self.last_state_projection_error = type(exc).__name__
 
     def _record_model_request(self, request: ProviderNeutralRequest) -> None:
-        self.state_store.append_event(
+        payload = request.to_state_payload()
+        # Request-local identity, security and budget constraints are applied
+        # by the Planner. Persisting their defaults as a state patch could
+        # silently erase stricter program-wide constraints supplied by a harness.
+        for key in ("identity", "security", "qos"):
+            payload.pop(key, None)
+        self.control_plane.ingest(
             AgentStateEvent(
                 event_type="MODEL_REQUESTED",
                 session_id=request.session_id,
@@ -146,13 +253,13 @@ class RequestGateway:
                 attempt_id=request.attempt_id,
                 trace_id=request.trace_id,
                 source="stateflow-gateway",
-                payload=request.to_state_payload(),
+                payload=payload,
                 authoritative=True,
             )
         )
 
     def _record_model_response(self, request: ProviderNeutralRequest, output_tokens: int) -> None:
-        self.state_store.append_event(
+        self.control_plane.ingest(
             AgentStateEvent(
                 event_type="MODEL_RESPONSE_RECEIVED",
                 session_id=request.session_id,
@@ -169,7 +276,7 @@ class RequestGateway:
         )
 
     def _record_failure(self, request: ProviderNeutralRequest, component: str, error: str) -> None:
-        self.state_store.append_event(
+        self.control_plane.ingest(
             AgentStateEvent(
                 event_type="MODEL_FAILED",
                 session_id=request.session_id,
